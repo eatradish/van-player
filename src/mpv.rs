@@ -1,6 +1,13 @@
 use lazy_static::lazy_static;
 use libmpv::{events::*, *};
-use std::{collections::HashMap, sync::{Mutex, mpsc::Receiver, atomic::{AtomicUsize, Ordering}}, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc::Receiver,
+        Mutex,
+    },
+};
 
 const DEFAULT_VOL: f64 = 50.0;
 
@@ -15,11 +22,7 @@ fn add(url: &str) {
     queue.push(url.to_string());
 }
 
-fn play(
-    vol_rx: Receiver<f64>,
-    next_rx: Receiver<bool>,
-    prev_rx: Receiver<bool>,
-) -> Result<()> {
+fn play(vol_rx: Receiver<f64>, next_rx: Receiver<bool>, prev_rx: Receiver<bool>) -> Result<()> {
     play_inner(vol_rx, next_rx, prev_rx);
 
     Ok(())
@@ -40,12 +43,10 @@ fn seekable_ranges(demuxer_cache_state: &MpvNode) -> Option<Vec<(f64, f64)>> {
     Some(res)
 }
 
-fn play_inner(
-    vol_rx: Receiver<f64>,
-    next_rx: Receiver<bool>,
-    prev_rx: Receiver<bool>,
-) {
+fn play_inner(vol_rx: Receiver<f64>, next_rx: Receiver<bool>, prev_rx: Receiver<bool>) {
     let mut ev_ctx = MPV.create_event_context();
+    ev_ctx.observe_property("volume", Format::Int64, 0).unwrap();
+    ev_ctx.observe_property("demuxer-cache-state", Format::Node, 0).unwrap();
     crossbeam::scope(|scope| {
         scope.spawn(move |_| {
             MPV.set_property("volume", DEFAULT_VOL).unwrap();
@@ -61,42 +62,43 @@ fn play_inner(
         });
         scope.spawn(move |_| loop {
             let mut current = CURRENT.load(Ordering::SeqCst);
-            let queue = QUEUE.lock().unwrap();
-            let queue = queue.iter().map(|x| x.as_str()).collect::<Vec<_>>();
-            let queue = queue
-                .into_iter()
-                .map(|x| (x, FileState::AppendPlay, None::<&str>))
-                .collect::<Vec<_>>();
             if let Ok(v) = vol_rx.try_recv() {
                 println!("vol is set to {}", v);
                 MPV.set_property("volume", v).unwrap();
             }
             if let Ok(next) = next_rx.try_recv() {
+                let queue = QUEUE.lock().unwrap();
+                let queue = queue.iter().map(|x| x.as_str()).collect::<Vec<_>>();
+                let queue = queue
+                    .into_iter()
+                    .map(|x| (x, FileState::AppendPlay, None::<&str>))
+                    .collect::<Vec<_>>();
                 if next {
-                    dbg!(current);
-                    println!("next!");
                     if current == queue.len() - 1 {
-                        CURRENT.store(0, Ordering::SeqCst);
                         MPV.playlist_next_force().unwrap();
                         MPV.playlist_load_files(&queue).unwrap();
+                        continue;
                     } else {
                         MPV.playlist_next_force().unwrap();
-                        CURRENT.store(current + 1, Ordering::SeqCst);
                     }
-
                 }
             }
             if let Ok(prev) = prev_rx.try_recv() {
+                let queue = QUEUE.lock().unwrap();
+                let queue = queue.iter().map(|x| x.as_str()).collect::<Vec<_>>();
+                let queue = queue
+                    .into_iter()
+                    .map(|x| (x, FileState::AppendPlay, None::<&str>))
+                    .collect::<Vec<_>>();
                 if prev {
                     println!("prev!");
                     if current == 0 {
                         current = queue.len() - 1;
-                        CURRENT.store(current, Ordering::SeqCst);
                         MPV.playlist_previous_force().unwrap();
                         MPV.playlist_load_files(&queue[current..]).unwrap();
+                        continue;
                     } else {
                         MPV.playlist_previous_force().unwrap();
-                        CURRENT.store(current - 1, Ordering::SeqCst);
                     }
                 }
             }
@@ -106,6 +108,12 @@ fn play_inner(
 
             match ev {
                 Ok(Event::EndFile(r)) => {
+                    println!("next!");
+                    let current = CURRENT.load(Ordering::SeqCst);
+                    let queue_len = QUEUE.lock().unwrap().len();
+                    if current < queue_len - 1 {
+                        CURRENT.store(current + 1, Ordering::SeqCst);
+                    }
                     println!("Exiting! Reason: {:?}", r);
                     break;
                 }
@@ -118,6 +126,16 @@ fn play_inner(
                     let ranges = seekable_ranges(mpv_node).unwrap();
                     println!("Seekable ranges updated: {:?}", ranges);
                 }
+                Ok(Event::Deprecated(_)) => {
+                    let queue = QUEUE.lock().unwrap();
+                    let queue = queue.iter().map(|x| x.as_str()).collect::<Vec<_>>();
+                    let queue = queue
+                        .into_iter()
+                        .map(|x| (x, FileState::AppendPlay, None::<&str>))
+                        .collect::<Vec<_>>();
+                    MPV.playlist_load_files(&queue).unwrap();
+                    CURRENT.store(0, Ordering::SeqCst);
+                }
                 Ok(e) => println!("Event triggered: {:?}", e),
                 Err(e) => println!("Event errored: {:?}", e),
             }
@@ -128,20 +146,23 @@ fn play_inner(
 
 #[test]
 fn test_play() {
+    use std::time::Duration;
     let (tx, rx) = std::sync::mpsc::channel();
     let (next_tx, next_rx) = std::sync::mpsc::channel();
     let (prev_tx, prev_rx) = std::sync::mpsc::channel();
-    tx.send(100.0).unwrap();
+    add("https://www.bilibili.com/video/BV1GR4y1w7CR");
+    add("https://www.bilibili.com/video/BV133411V7dY");
     add("https://www.bilibili.com/video/BV1WL4y1F7Uj");
     add("https://www.bilibili.com/video/BV18B4y127QA");
     let work = std::thread::spawn(|| {
         play(rx, next_rx, prev_rx).unwrap();
     });
-    tx.send(75.0).unwrap();
+    tx.send(100.0).unwrap();
     std::thread::sleep(Duration::from_secs(10));
     next_tx.send(true).unwrap();
     std::thread::sleep(Duration::from_secs(10));
     next_tx.send(true).unwrap();
-
+    std::thread::sleep(Duration::from_secs(10));
+    prev_tx.send(true).unwrap();
     work.join().unwrap();
 }
