@@ -16,9 +16,9 @@ fn add(url: &str) {
 }
 
 fn play(
-    vol_rx: std::sync::mpsc::Receiver<f64>,
-    next_rx: std::sync::mpsc::Receiver<bool>,
-    prev_rx: std::sync::mpsc::Receiver<bool>,
+    vol_rx: Receiver<f64>,
+    next_rx: Receiver<bool>,
+    prev_rx: Receiver<bool>,
 ) -> Result<()> {
     play_inner(vol_rx, next_rx, prev_rx);
 
