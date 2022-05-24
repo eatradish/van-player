@@ -1,0 +1,13 @@
+[package]
+name = "van-player"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+libmpv = "2.0"
+cursive = "0.18"
+anyhow = "1.0"
+crossbeam = "0.8"
+lazy_static = "1.4"
