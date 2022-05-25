@@ -13,13 +13,14 @@ const DEFAULT_VOL: f64 = 50.0;
 
 lazy_static! {
     static ref MPV: Mpv = Mpv::new().expect("Can not init mpv");
-    static ref QUEUE: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    static ref QUEUE: Mutex<Vec<(&'static str, FileState, Option<&'static str>)>> =
+        Mutex::new(Vec::new());
     static ref CURRENT: AtomicUsize = AtomicUsize::new(0);
 }
 
-fn add(url: &str) {
+fn add(url: &'static str) {
     let mut queue = QUEUE.lock().unwrap();
-    queue.push(url.to_string());
+    queue.push((url, FileState::AppendPlay, None));
 }
 
 fn play(vol_rx: Receiver<f64>, next_rx: Receiver<bool>, prev_rx: Receiver<bool>) -> Result<()> {
@@ -46,19 +47,16 @@ fn seekable_ranges(demuxer_cache_state: &MpvNode) -> Option<Vec<(f64, f64)>> {
 fn play_inner(vol_rx: Receiver<f64>, next_rx: Receiver<bool>, prev_rx: Receiver<bool>) {
     let mut ev_ctx = MPV.create_event_context();
     ev_ctx.observe_property("volume", Format::Int64, 0).unwrap();
-    ev_ctx.observe_property("demuxer-cache-state", Format::Node, 0).unwrap();
+    ev_ctx
+        .observe_property("demuxer-cache-state", Format::Node, 0)
+        .unwrap();
     crossbeam::scope(|scope| {
         scope.spawn(move |_| {
             MPV.set_property("volume", DEFAULT_VOL).unwrap();
             MPV.set_property("vo", "null").unwrap();
             let current = CURRENT.load(Ordering::SeqCst);
-            let queue = QUEUE.lock().unwrap();
-            let queue = queue.iter().map(|x| x.as_str()).collect::<Vec<_>>();
-            let queue = queue
-                .into_iter()
-                .map(|x| (x, FileState::AppendPlay, None::<&str>))
-                .collect::<Vec<_>>();
-            MPV.playlist_load_files(&queue[current..]).unwrap();
+            MPV.playlist_load_files(&QUEUE.lock().unwrap()[current..])
+                .unwrap();
         });
         scope.spawn(move |_| loop {
             let mut current = CURRENT.load(Ordering::SeqCst);
@@ -68,15 +66,10 @@ fn play_inner(vol_rx: Receiver<f64>, next_rx: Receiver<bool>, prev_rx: Receiver<
             }
             if let Ok(next) = next_rx.try_recv() {
                 let queue = QUEUE.lock().unwrap();
-                let queue = queue.iter().map(|x| x.as_str()).collect::<Vec<_>>();
-                let queue = queue
-                    .into_iter()
-                    .map(|x| (x, FileState::AppendPlay, None::<&str>))
-                    .collect::<Vec<_>>();
                 if next {
                     if current == queue.len() - 1 {
                         MPV.playlist_next_force().unwrap();
-                        MPV.playlist_load_files(&queue).unwrap();
+                        MPV.playlist_load_files(&queue[current..]).unwrap();
                         continue;
                     } else {
                         MPV.playlist_next_force().unwrap();
@@ -85,11 +78,6 @@ fn play_inner(vol_rx: Receiver<f64>, next_rx: Receiver<bool>, prev_rx: Receiver<
             }
             if let Ok(prev) = prev_rx.try_recv() {
                 let queue = QUEUE.lock().unwrap();
-                let queue = queue.iter().map(|x| x.as_str()).collect::<Vec<_>>();
-                let queue = queue
-                    .into_iter()
-                    .map(|x| (x, FileState::AppendPlay, None::<&str>))
-                    .collect::<Vec<_>>();
                 if prev {
                     println!("prev!");
                     if current == 0 {
@@ -128,11 +116,6 @@ fn play_inner(vol_rx: Receiver<f64>, next_rx: Receiver<bool>, prev_rx: Receiver<
                 }
                 Ok(Event::Deprecated(_)) => {
                     let queue = QUEUE.lock().unwrap();
-                    let queue = queue.iter().map(|x| x.as_str()).collect::<Vec<_>>();
-                    let queue = queue
-                        .into_iter()
-                        .map(|x| (x, FileState::AppendPlay, None::<&str>))
-                        .collect::<Vec<_>>();
                     MPV.playlist_load_files(&queue).unwrap();
                     CURRENT.store(0, Ordering::SeqCst);
                 }
