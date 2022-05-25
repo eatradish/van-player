@@ -22,10 +22,10 @@ struct MediaInfo {
 const DEFAULT_VOL: f64 = 50.0;
 
 lazy_static! {
-    static ref MPV: Mpv = Mpv::new().expect("Can not init mpv");
-    static ref QUEUE: Mutex<Vec<(&'static str, FileState, Option<&'static str>)>> =
+    pub static ref MPV: Mpv = Mpv::new().expect("Can not init mpv");
+    pub static ref QUEUE: Mutex<Vec<(&'static str, FileState, Option<&'static str>)>> =
         Mutex::new(Vec::new());
-    static ref CURRENT: AtomicUsize = AtomicUsize::new(0);
+    pub static ref CURRENT: AtomicUsize = AtomicUsize::new(0);
 }
 
 macro_rules! check_err {
@@ -50,9 +50,15 @@ pub fn play(
     prev_rx: Receiver<bool>,
     get_info_tx: Sender<bool>,
 ) -> Result<()> {
+    MPV.set_property("volume", DEFAULT_VOL).map_err(|e| anyhow!("{}", e))?;
     play_inner(vol_rx, next_rx, prev_rx, get_info_tx)?;
 
     Ok(())
+}
+
+pub fn get_volume() -> Result<f64> {
+    MPV.get_property::<f64>("volume")
+        .map_err(|e| anyhow!("{}", e))
 }
 
 fn seekable_ranges(demuxer_cache_state: &MpvNode) -> Option<Vec<(f64, f64)>> {
@@ -88,7 +94,6 @@ fn play_inner(
     let err_tx_3 = err_tx.clone();
     crossbeam::scope(|scope| {
         scope.spawn(move |_| {
-            check_err!(MPV.set_property("volume", DEFAULT_VOL), err_tx);
             check_err!(MPV.set_property("vo", "null"), err_tx);
             let current = CURRENT.load(Ordering::SeqCst);
             check_err!(
@@ -99,7 +104,6 @@ fn play_inner(
         scope.spawn(move |_| loop {
             let mut current = CURRENT.load(Ordering::SeqCst);
             if let Ok(v) = vol_rx.try_recv() {
-                println!("vol is set to {}", v);
                 check_err!(MPV.set_property("volume", v), err_tx_2);
             }
             if let Ok(next) = next_rx.try_recv() {
@@ -121,7 +125,6 @@ fn play_inner(
                 check_err!(queue, err_tx_2);
                 let queue = queue.unwrap();
                 if prev {
-                    println!("prev!");
                     if current == 0 {
                         current = queue.len() - 1;
                         check_err!(MPV.playlist_previous_force(), err_tx_2);
@@ -146,7 +149,6 @@ fn play_inner(
                     if current < queue.len() - 1 {
                         CURRENT.store(current + 1, Ordering::SeqCst);
                     }
-                    println!("Exiting! Reason: {:?}", r);
                     break;
                 }
 
@@ -155,9 +157,6 @@ fn play_inner(
                     change: PropertyData::Node(mpv_node),
                     ..
                 }) => {
-                    if let Some(ranges) = seekable_ranges(mpv_node) {
-                        println!("Seekable ranges updated: {:?}", ranges);
-                    }
                     get_info_tx.send(true).ok();
                 }
                 Ok(Event::Deprecated(_)) => {
@@ -167,8 +166,9 @@ fn play_inner(
                     check_err!(MPV.playlist_load_files(&queue), err_tx_3);
                     CURRENT.store(0, Ordering::SeqCst);
                 }
-                Ok(e) => println!("Event triggered: {:?}", e),
-                Err(e) => println!("Event errored: {:?}", e),
+                // Ok(e) => ("Event triggered: {:?}", e),
+                // Err(e) => println!("Event errored: {:?}", e),
+                _ => continue,
             }
         });
     })
@@ -185,7 +185,7 @@ fn get_current_media_info(get_info_rx: Receiver<bool>) -> Result<MediaInfo> {
     if let Ok(rx) = get_info_rx.recv_timeout(Duration::from_secs(60)) {
         if rx {
             let title = MPV
-                .get_property::<String>("media-title")
+                .get_property("media-title")
                 .map_err(|e| anyhow!("{}", e))?;
             let duration = MPV
                 .get_property::<f64>("duration")
@@ -216,6 +216,7 @@ fn test_play() {
     add("https://www.bilibili.com/video/BV133411V7dY").unwrap();
     add("https://www.bilibili.com/video/BV1WL4y1F7Uj").unwrap();
     add("https://www.bilibili.com/video/BV18B4y127QA").unwrap();
+    add("https://www.bilibili.com/video/BV1NY4y1t7hx?p=7").unwrap();
     let work = std::thread::spawn(|| {
         play(rx, next_rx, prev_rx, get_info_tx).unwrap();
     });

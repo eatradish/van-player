@@ -11,3 +11,8 @@ cursive = "0.18"
 anyhow = "1.0"
 crossbeam = "0.8"
 lazy_static = "1.4"
+youtube_dl = { git = "https://github.com/GyrosOfWar/youtube-dl-rs/", rev = "377376ab81fcae557f5372690d65db089ee7fa34", features = ["youtube-dl", "tokio"] }
+tokio = { version = "1.18", features = ["rt", "rt-multi-thread", "macros"] }
+serde_json = "1.0"
+serde = {version = "1.0", features = ["derive"] }
+futures = "0.3"
