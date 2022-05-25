@@ -6,7 +6,7 @@ use cursive::{
     views::{Dialog, LinearLayout, ResizedView, ScrollView, TextView, TextContent},
     View,
 };
-use van_player::mpv::get_volume;
+use van_player::mpv::{get_volume, DEFAULT_VOL};
 
 mod mpv;
 mod youtubedl;
@@ -18,6 +18,10 @@ fn main() {
     let (prev_tx, prev_rx) = std::sync::mpsc::channel();
     let (get_info_tx, get_info_rx) = std::sync::mpsc::channel();
     std::thread::spawn(|| {
+        // FIXME: Non-C locale detected. This is not supported.
+        // Call 'setlocale(LC_NUMERIC, "C");' in your code.
+        let buf = std::ffi::CString::new("C").expect("Unknown Error!");
+        unsafe { libc::setlocale(libc::LC_NUMERIC, buf.as_ptr()) };
         if let Err(e) = mpv::play(volume_rx, next_rx, prev_rx, get_info_tx) {
             eprintln!("{}", e);
             std::process::exit(1);
@@ -27,30 +31,26 @@ fn main() {
         eprintln!("{}", e);
         std::process::exit(1);
     }
-    let mut vol_view = TextView::new("Loading ...");
+    let mut vol_view = TextView::new(format!("vol: {}", DEFAULT_VOL));
     let vol_status = Arc::new(vol_view.get_shared_content());
-    if let Ok(v) = get_volume() {
-        vol_status.set_content(format!("vol: {}", v));
-    }
 
     let view = wrap_in_dialog(
         LinearLayout::vertical().child(vol_view),
         "Van",
         None,
     );
-
     let volume_tx_clone = volume_tx.clone();
     let volume_tx_clone_2 = volume_tx.clone();
     let volume_status_clone = vol_status.clone();
     let volume_status_clone_2 = vol_status.clone();
-    siv.add_global_callback('+', move |_| {
+    siv.add_global_callback('=', move |_| {
         add_volume(volume_tx_clone.clone(), volume_status_clone.clone()).ok();
     });
     siv.add_global_callback('-', move |_| {
         reduce_volume(volume_tx_clone_2.clone(), volume_status_clone_2.clone()).ok();
     });
     siv.add_layer(view);
-    siv.run();
+    siv.run()
 }
 
 fn add_volume(volume_tx: Sender<f64>, vol_status: Arc<TextContent>) -> Result<()> {

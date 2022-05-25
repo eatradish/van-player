@@ -730,6 +730,7 @@ dependencies = [
  "cursive",
  "futures",
  "lazy_static",
+ "libc",
  "libmpv",
  "serde",
  "serde_json",

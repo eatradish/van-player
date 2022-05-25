@@ -19,7 +19,7 @@ struct MediaInfo {
     current_time: f64,
 }
 
-const DEFAULT_VOL: f64 = 50.0;
+pub const DEFAULT_VOL: f64 = 50.0;
 
 lazy_static! {
     pub static ref MPV: Mpv = Mpv::new().expect("Can not init mpv");
