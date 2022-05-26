@@ -1,6 +1,7 @@
 use std::sync::{mpsc::Sender, Arc};
 use anyhow::Result;
 
+use clap::Parser;
 use cursive::{
     view::SizeConstraint,
     views::{Dialog, LinearLayout, ResizedView, ScrollView, TextView, TextContent, DummyView},
@@ -11,6 +12,13 @@ use van_player::mpv::DEFAULT_VOL;
 
 mod mpv;
 mod youtubedl;
+
+#[derive(Parser, Debug)]
+#[clap(about, version, author)]
+struct Args {
+    #[clap()]
+    args: Vec<String>,
+}
 
 fn main() {
     cursive::logger::init();
@@ -46,15 +54,15 @@ fn main() {
             }
         }
     });
-    if let Err(e) = mpv::add("https://www.bilibili.com/video/BV1WL4y1F7Uj") {
-        eprintln!("{}", e);
-        std::process::exit(1);
-    }
-    if let Err(e) = mpv::add("https://www.bilibili.com/video/BV19U4y13777") {
-        eprintln!("{}", e);
-        std::process::exit(1);
-    }
 
+    let args = Args::parse().args;
+    for i in args {
+        if let Err(e) = mpv::add(&i) {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
+    }
+    
     let view = wrap_in_dialog(
         LinearLayout::vertical().child(current_song_view).child(DummyView {}).child(vol_view),
         "Van",

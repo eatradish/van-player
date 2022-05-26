@@ -7,7 +7,7 @@ struct YtdlMediaMeta {
     uploader: Option<String>,
 }
 
-fn get_youtubedl_info(
+fn init_youtubedl_info_list(
     queue: Vec<&str>,
     thread: Option<usize>,
 ) -> Result<Vec<Result<YtdlMediaMeta>>> {
@@ -69,5 +69,5 @@ fn test_get_list_info() {
         "https://www.bilibili.com/video/BV1AF411571Z",
         "https://www.bilibili.com/video/BV1NY4y1t7hx?p=7",
     ];
-    dbg!(get_youtubedl_info(queue, None).unwrap());
+    dbg!(init_youtubedl_info_list(queue, None).unwrap());
 }

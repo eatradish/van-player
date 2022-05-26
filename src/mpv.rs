@@ -7,7 +7,7 @@ use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
         mpsc::{Receiver, Sender},
-        Mutex, Arc,
+        Arc, Mutex,
     },
     time::Duration,
 };
@@ -25,7 +25,7 @@ pub const DEFAULT_VOL: f64 = 50.0;
 
 lazy_static! {
     pub static ref MPV: Mpv = Mpv::new().expect("Can not init mpv");
-    pub static ref QUEUE: Mutex<Vec<(&'static str, FileState, Option<&'static str>)>> =
+    pub static ref QUEUE: Mutex<Vec<(String, FileState, Option<&'static str>)>> =
         Mutex::new(Vec::new());
     pub static ref CURRENT: AtomicUsize = AtomicUsize::new(0);
 }
@@ -40,9 +40,9 @@ macro_rules! check_err {
     };
 }
 
-pub fn add(url: &'static str) -> Result<()> {
+pub fn add(url: &str) -> Result<()> {
     let mut queue = QUEUE.lock().map_err(|e| anyhow!("{}", e))?;
-    queue.push((url, FileState::AppendPlay, None));
+    queue.push((url.to_string(), FileState::AppendPlay, None));
 
     Ok(())
 }
@@ -102,8 +102,13 @@ fn play_inner(
         scope.spawn(move |_| {
             check_err!(MPV.set_property("vo", "null"), err_tx);
             let current = CURRENT.load(Ordering::SeqCst);
+            let queue = &*QUEUE.lock().unwrap();
+            let queue = queue
+                .into_iter()
+                .map(|(x, y, z)| (x.as_str(), y.clone(), z.clone()))
+                .collect::<Vec<_>>();
             check_err!(
-                MPV.playlist_load_files(&QUEUE.lock().unwrap()[current..]),
+                MPV.playlist_load_files(&queue[current..]),
                 err_tx
             );
         });
@@ -113,9 +118,11 @@ fn play_inner(
                 check_err!(MPV.set_property("volume", v), err_tx_2);
             }
             if let Ok(next) = next_rx.try_recv() {
-                let queue = QUEUE.lock();
-                check_err!(queue, err_tx_2);
-                let queue = queue.unwrap();
+                let queue = &*QUEUE.lock().unwrap();
+                let queue = queue
+                    .into_iter()
+                    .map(|(x, y, z)| (x.as_str(), y.clone(), z.clone()))
+                    .collect::<Vec<_>>();
                 if next {
                     if current == queue.len() - 1 {
                         check_err!(MPV.playlist_next_force(), err_tx_2);
@@ -127,9 +134,11 @@ fn play_inner(
                 }
             }
             if let Ok(prev) = prev_rx.try_recv() {
-                let queue = QUEUE.lock();
-                check_err!(queue, err_tx_2);
-                let queue = queue.unwrap();
+                let queue = &*QUEUE.lock().unwrap();
+                let queue = queue
+                    .into_iter()
+                    .map(|(x, y, z)| (x.as_str(), y.clone(), z.clone()))
+                    .collect::<Vec<_>>();
                 if prev {
                     if current == 0 {
                         current = queue.len() - 1;
@@ -147,9 +156,11 @@ fn play_inner(
             match ev {
                 Ok(Event::EndFile(_)) => {
                     let current = CURRENT.load(Ordering::SeqCst);
-                    let queue = QUEUE.lock();
-                    check_err!(queue, err_tx_3);
-                    let queue = queue.unwrap();
+                    let queue = &*QUEUE.lock().unwrap();
+                    let queue = queue
+                        .into_iter()
+                        .map(|(x, y, z)| (x.as_str(), y.clone(), z.clone()))
+                        .collect::<Vec<_>>();
                     if current < queue.len() - 1 {
                         CURRENT.store(current + 1, Ordering::SeqCst);
                     }
@@ -167,9 +178,11 @@ fn play_inner(
                     info!("{:?}", seekable_ranges(node));
                 }
                 Ok(Event::Deprecated(_)) => {
-                    let queue = QUEUE.lock();
-                    check_err!(queue, err_tx_3);
-                    let queue = queue.unwrap();
+                    let queue = &*QUEUE.lock().unwrap();
+                    let queue = queue
+                        .into_iter()
+                        .map(|(x, y, z)| (x.as_str(), y.clone(), z.clone()))
+                        .collect::<Vec<_>>();
                     check_err!(MPV.playlist_load_files(&queue), err_tx_3);
                     CURRENT.store(0, Ordering::SeqCst);
                 }
