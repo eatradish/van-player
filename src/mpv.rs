@@ -1,18 +1,16 @@
-use cursive::views::TextContent;
 use lazy_static::lazy_static;
 use libmpv::{events::*, *};
-use log::{error, info, warn};
+use log::{error, info};
 use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicUsize, Ordering},
         mpsc::{Receiver, Sender},
-        Arc, Mutex,
+        Mutex,
     },
-    time::Duration,
 };
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 
 #[derive(Debug)]
 pub struct MediaInfo {
@@ -49,13 +47,12 @@ pub fn add(url: &str) -> Result<()> {
 
 pub fn play(
     vol_rx: Receiver<f64>,
-    next_rx: Receiver<bool>,
-    prev_rx: Receiver<bool>,
+    control_rx: Receiver<bool>,
     getinfo_tx: Sender<MediaInfo>,
 ) -> Result<()> {
     MPV.set_property("volume", DEFAULT_VOL)
         .map_err(|e| anyhow!("{}", e))?;
-    play_inner(vol_rx, next_rx, prev_rx, getinfo_tx)?;
+    play_inner(vol_rx, control_rx, getinfo_tx)?;
 
     Ok(())
 }
@@ -82,8 +79,7 @@ fn seekable_ranges(demuxer_cache_state: &MpvNode) -> Option<Vec<(f64, f64)>> {
 
 fn play_inner(
     vol_rx: Receiver<f64>,
-    next_rx: Receiver<bool>,
-    prev_rx: Receiver<bool>,
+    song_control_rx: Receiver<bool>,
     getinfo_tx: Sender<MediaInfo>,
 ) -> Result<()> {
     let mut ev_ctx = MPV.create_event_context();
@@ -117,7 +113,7 @@ fn play_inner(
             if let Ok(v) = vol_rx.try_recv() {
                 check_err!(MPV.set_property("volume", v), err_tx_2);
             }
-            if let Ok(next) = next_rx.try_recv() {
+            if let Ok(next) = song_control_rx.try_recv() {
                 let queue = &*QUEUE.lock().unwrap();
                 let queue = queue
                     .into_iter()
@@ -131,15 +127,7 @@ fn play_inner(
                     } else {
                         check_err!(MPV.playlist_next_force(), err_tx_2);
                     }
-                }
-            }
-            if let Ok(prev) = prev_rx.try_recv() {
-                let queue = &*QUEUE.lock().unwrap();
-                let queue = queue
-                    .into_iter()
-                    .map(|(x, y, z)| (x.as_str(), y.clone(), z.clone()))
-                    .collect::<Vec<_>>();
-                if prev {
+                } else {
                     if current == 0 {
                         current = queue.len() - 1;
                         check_err!(MPV.playlist_previous_force(), err_tx_2);
@@ -220,9 +208,9 @@ pub fn get_current_media_info() -> Result<MediaInfo> {
 
 #[test]
 fn test_play() {
+    use std::time::Duration;
     let (tx, rx) = std::sync::mpsc::channel();
-    let (next_tx, next_rx) = std::sync::mpsc::channel();
-    let (prev_tx, prev_rx) = std::sync::mpsc::channel();
+    let (control_tx, control_rx) = std::sync::mpsc::channel();
     let (getinfo_tx, getinfo_rx) = std::sync::mpsc::channel();
     add("https://www.bilibili.com/video/BV1gr4y1b7vN").unwrap();
     add("https://www.bilibili.com/video/BV1GR4y1w7CR").unwrap();
@@ -231,15 +219,15 @@ fn test_play() {
     add("https://www.bilibili.com/video/BV18B4y127QA").unwrap();
     add("https://www.bilibili.com/video/BV1NY4y1t7hx?p=7").unwrap();
     let work = std::thread::spawn(|| {
-        play(rx, next_rx, prev_rx, getinfo_tx).unwrap();
+        play(rx, control_rx, getinfo_tx).unwrap();
     });
     tx.send(100.0).unwrap();
     std::thread::sleep(Duration::from_secs(10));
     std::thread::sleep(Duration::from_secs(10));
-    next_tx.send(true).unwrap();
+    control_tx.send(true).unwrap();
     std::thread::sleep(Duration::from_secs(10));
-    next_tx.send(true).unwrap();
+    control_tx.send(true).unwrap();
     std::thread::sleep(Duration::from_secs(10));
-    prev_tx.send(true).unwrap();
+    control_tx.send(false).unwrap();
     work.join().unwrap();
 }

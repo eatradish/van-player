@@ -25,8 +25,7 @@ fn main() {
     log::set_max_level(log::LevelFilter::Info);
     let mut siv = cursive::default();
     let (volume_tx, volume_rx) = std::sync::mpsc::channel();
-    let (next_tx, next_rx) = std::sync::mpsc::channel();
-    let (prev_tx, prev_rx) = std::sync::mpsc::channel();
+    let (control_tx, control_rx) = std::sync::mpsc::channel();
 
     let mut vol_view = TextView::new(format!("vol: {}", DEFAULT_VOL));
     let vol_status = Arc::new(vol_view.get_shared_content());
@@ -42,7 +41,7 @@ fn main() {
             // Call 'setlocale(LC_NUMERIC, "C");' in your code.
             let buf = std::ffi::CString::new("C").expect("Unknown Error!");
             unsafe { libc::setlocale(libc::LC_NUMERIC, buf.as_ptr()) };
-            if let Err(e) = mpv::play(volume_rx, next_rx, prev_rx, getinfo_tx) {
+            if let Err(e) = mpv::play(volume_rx, control_rx, getinfo_tx) {
                 eprintln!("{}", e);
                 std::process::exit(1);
             }
@@ -72,6 +71,7 @@ fn main() {
     let volume_tx_clone_2 = volume_tx.clone();
     let volume_status_clone = vol_status.clone();
     let volume_status_clone_2 = vol_status.clone();
+    let control_tx_clone = control_tx.clone();
 
     siv.add_global_callback('=', move |_| {
         add_volume(volume_tx_clone.clone(), volume_status_clone.clone()).ok();
@@ -80,8 +80,12 @@ fn main() {
         reduce_volume(volume_tx_clone_2.clone(), volume_status_clone_2.clone()).ok();
     });
     siv.add_global_callback(Event::Key(Key::Right), move |_| {
-        next_tx.send(true).unwrap();
+        control_tx.send(true).unwrap();
     });
+    siv.add_global_callback(Event::Key(Key::Left), move |_| {
+        control_tx_clone.send(false).unwrap();
+    });
+
     siv.add_global_callback('~', cursive::Cursive::toggle_debug_console);
 
     siv.set_autorefresh(true);
