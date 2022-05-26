@@ -1,11 +1,13 @@
+use cursive::views::TextContent;
 use lazy_static::lazy_static;
 use libmpv::{events::*, *};
+use log::{error, info, warn};
 use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicUsize, Ordering},
         mpsc::{Receiver, Sender},
-        Mutex,
+        Mutex, Arc,
     },
     time::Duration,
 };
@@ -13,10 +15,10 @@ use std::{
 use anyhow::{anyhow, bail, Result};
 
 #[derive(Debug)]
-struct MediaInfo {
-    title: String,
-    duration: f64,
-    current_time: f64,
+pub struct MediaInfo {
+    pub title: String,
+    pub duration: f64,
+    pub current_time: f64,
 }
 
 pub const DEFAULT_VOL: f64 = 50.0;
@@ -32,6 +34,7 @@ macro_rules! check_err {
     ($i:expr, $err_tx:expr) => {
         if let Err(e) = $i {
             $err_tx.send(e.to_string()).unwrap();
+            error!("{}", e);
             return;
         }
     };
@@ -48,10 +51,11 @@ pub fn play(
     vol_rx: Receiver<f64>,
     next_rx: Receiver<bool>,
     prev_rx: Receiver<bool>,
-    get_info_tx: Sender<bool>,
+    getinfo_tx: Sender<MediaInfo>,
 ) -> Result<()> {
-    MPV.set_property("volume", DEFAULT_VOL).map_err(|e| anyhow!("{}", e))?;
-    play_inner(vol_rx, next_rx, prev_rx, get_info_tx)?;
+    MPV.set_property("volume", DEFAULT_VOL)
+        .map_err(|e| anyhow!("{}", e))?;
+    play_inner(vol_rx, next_rx, prev_rx, getinfo_tx)?;
 
     Ok(())
 }
@@ -80,7 +84,7 @@ fn play_inner(
     vol_rx: Receiver<f64>,
     next_rx: Receiver<bool>,
     prev_rx: Receiver<bool>,
-    get_info_tx: Sender<bool>,
+    getinfo_tx: Sender<MediaInfo>,
 ) -> Result<()> {
     let mut ev_ctx = MPV.create_event_context();
     ev_ctx
@@ -89,9 +93,11 @@ fn play_inner(
     ev_ctx
         .observe_property("demuxer-cache-state", Format::Node, 0)
         .map_err(|e| anyhow!("{}", e))?;
+
     let (err_tx, err_rx) = std::sync::mpsc::channel();
     let err_tx_2 = err_tx.clone();
     let err_tx_3 = err_tx.clone();
+
     crossbeam::scope(|scope| {
         scope.spawn(move |_| {
             check_err!(MPV.set_property("vo", "null"), err_tx);
@@ -138,10 +144,8 @@ fn play_inner(
         });
         scope.spawn(move |_| loop {
             let ev = ev_ctx.wait_event(600.).unwrap_or(Err(Error::Null));
-
             match ev {
-                Ok(Event::EndFile(r)) => {
-                    println!("next!");
+                Ok(Event::EndFile(_)) => {
                     let current = CURRENT.load(Ordering::SeqCst);
                     let queue = QUEUE.lock();
                     check_err!(queue, err_tx_3);
@@ -149,15 +153,18 @@ fn play_inner(
                     if current < queue.len() - 1 {
                         CURRENT.store(current + 1, Ordering::SeqCst);
                     }
-                    break;
                 }
-
                 Ok(Event::PropertyChange {
                     name: "demuxer-cache-state",
-                    change: PropertyData::Node(mpv_node),
+                    change: PropertyData::Node(node),
                     ..
                 }) => {
-                    get_info_tx.send(true).ok();
+                    let current_media = get_current_media_info();
+                    if let Ok(m) = current_media {
+                        info!("Send!, {:?}", m);
+                        getinfo_tx.send(m).ok();
+                    }
+                    info!("{:?}", seekable_ranges(node));
                 }
                 Ok(Event::Deprecated(_)) => {
                     let queue = QUEUE.lock();
@@ -166,9 +173,8 @@ fn play_inner(
                     check_err!(MPV.playlist_load_files(&queue), err_tx_3);
                     CURRENT.store(0, Ordering::SeqCst);
                 }
-                // Ok(e) => ("Event triggered: {:?}", e),
-                // Err(e) => println!("Event errored: {:?}", e),
-                _ => continue,
+                Ok(e) => info!("Event triggered: {:?}", e),
+                Err(e) => error!("Event errored: {:?}", e),
             }
         });
     })
@@ -181,28 +187,22 @@ fn play_inner(
     Ok(())
 }
 
-fn get_current_media_info(get_info_rx: Receiver<bool>) -> Result<MediaInfo> {
-    if let Ok(rx) = get_info_rx.recv_timeout(Duration::from_secs(60)) {
-        if rx {
-            let title = MPV
-                .get_property("media-title")
-                .map_err(|e| anyhow!("{}", e))?;
-            let duration = MPV
-                .get_property::<f64>("duration")
-                .map_err(|e| anyhow!("{}", e))?;
-            let current_time = MPV
-                .get_property::<f64>("time-pos")
-                .map_err(|e| anyhow!("{}", e))?;
+pub fn get_current_media_info() -> Result<MediaInfo> {
+    let title = MPV
+        .get_property("media-title")
+        .map_err(|e| anyhow!("{}", e))?;
+    let duration = MPV
+        .get_property::<f64>("duration")
+        .map_err(|e| anyhow!("{}", e))?;
+    let current_time = MPV
+        .get_property::<f64>("time-pos")
+        .map_err(|e| anyhow!("{}", e))?;
 
-            return Ok(MediaInfo {
-                title,
-                duration,
-                current_time,
-            });
-        }
-    }
-
-    bail!("Mpv playlist is empty!")
+    return Ok(MediaInfo {
+        title,
+        duration,
+        current_time,
+    });
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn test_play() {
     let (tx, rx) = std::sync::mpsc::channel();
     let (next_tx, next_rx) = std::sync::mpsc::channel();
     let (prev_tx, prev_rx) = std::sync::mpsc::channel();
-    let (get_info_tx, get_info_rx) = std::sync::mpsc::channel();
+    let (getinfo_tx, getinfo_rx) = std::sync::mpsc::channel();
     add("https://www.bilibili.com/video/BV1gr4y1b7vN").unwrap();
     add("https://www.bilibili.com/video/BV1GR4y1w7CR").unwrap();
     add("https://www.bilibili.com/video/BV133411V7dY").unwrap();
@@ -218,11 +218,10 @@ fn test_play() {
     add("https://www.bilibili.com/video/BV18B4y127QA").unwrap();
     add("https://www.bilibili.com/video/BV1NY4y1t7hx?p=7").unwrap();
     let work = std::thread::spawn(|| {
-        play(rx, next_rx, prev_rx, get_info_tx).unwrap();
+        play(rx, next_rx, prev_rx, getinfo_tx).unwrap();
     });
     tx.send(100.0).unwrap();
     std::thread::sleep(Duration::from_secs(10));
-    dbg!(get_current_media_info(get_info_rx).unwrap());
     std::thread::sleep(Duration::from_secs(10));
     next_tx.send(true).unwrap();
     std::thread::sleep(Duration::from_secs(10));

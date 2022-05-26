@@ -732,6 +732,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "libmpv",
+ "log",
  "serde",
  "serde_json",
  "tokio",
