@@ -76,9 +76,9 @@ fn main() {
 
     let view = wrap_in_dialog(
         LinearLayout::vertical()
-            .child(current_song_view)
+            .child(current_song_view.center())
             .child(DummyView {})
-            .child(current_time_view)
+            .child(current_time_view.center())
             .child(DummyView {})
             .child(vol_view),
         "Van",
