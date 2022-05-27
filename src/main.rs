@@ -1,17 +1,18 @@
+use anyhow::{anyhow, Result};
 use std::sync::{mpsc::Sender, Arc};
-use anyhow::Result;
+use time::{format_description, UtcOffset};
 
 use clap::Parser;
 use cursive::{
+    event::{Event, Key},
     view::SizeConstraint,
-    views::{Dialog, LinearLayout, ResizedView, ScrollView, TextView, TextContent, DummyView},
-    View, event::{Event, Key}, Cursive
+    views::{Dialog, DummyView, LinearLayout, ResizedView, ScrollView, TextContent, TextView},
+    View,
 };
-use log::info;
-use van_player::mpv::DEFAULT_VOL;
+use log::{error, info};
+use mpv::DEFAULT_VOL;
 
 mod mpv;
-mod youtubedl;
 
 #[derive(Parser, Debug)]
 #[clap(about, version, author)]
@@ -33,6 +34,9 @@ fn main() {
     let mut current_song_view = TextView::new("Unknown");
     let current_song_status = Arc::new(current_song_view.get_shared_content());
 
+    let mut current_time_view = TextView::new("-/-");
+    let current_time_status = Arc::new(current_time_view.get_shared_content());
+
     std::thread::spawn(move || {
         let (getinfo_tx, getinfo_rx) = std::sync::mpsc::channel();
         let current_song_status_clone = current_song_status.clone();
@@ -47,9 +51,17 @@ fn main() {
             }
         });
         loop {
+            let mut s = String::from("-/-");
             if let Ok(m) = getinfo_rx.try_recv() {
                 info!("Recviver! {:?}", m);
                 current_song_status_clone.set_content(m.title);
+                if let Ok(current_time) = get_time(m.current_time) {
+                    s = s.replace("-/", &format!("{}/", current_time));
+                }
+                if let Ok(duration) = get_time(m.duration) {
+                    s = s.replace("/-", &format!("/{}", duration));
+                }
+                current_time_status.set_content(s);
             }
         }
     });
@@ -61,9 +73,14 @@ fn main() {
             std::process::exit(1);
         }
     }
-    
+
     let view = wrap_in_dialog(
-        LinearLayout::vertical().child(current_song_view).child(DummyView {}).child(vol_view),
+        LinearLayout::vertical()
+            .child(current_song_view)
+            .child(DummyView {})
+            .child(current_time_view)
+            .child(DummyView {})
+            .child(vol_view),
         "Van",
         None,
     );
@@ -74,10 +91,14 @@ fn main() {
     let control_tx_clone = control_tx.clone();
 
     siv.add_global_callback('=', move |_| {
-        add_volume(volume_tx_clone.clone(), volume_status_clone.clone()).ok();
+        if let Err(e) = add_volume(volume_tx_clone.clone(), volume_status_clone.clone()) {
+            error!("{}", e);
+        }
     });
     siv.add_global_callback('-', move |_| {
-        reduce_volume(volume_tx_clone_2.clone(), volume_status_clone_2.clone()).ok();
+        if let Err(e) = reduce_volume(volume_tx_clone_2.clone(), volume_status_clone_2.clone()) {
+            error!("{}", e);
+        }
     });
     siv.add_global_callback(Event::Key(Key::Right), move |_| {
         control_tx.send(true).unwrap();
@@ -123,4 +144,24 @@ fn wrap_in_dialog<V: View, S: Into<String>>(inner: V, title: S, width: Option<us
     ))
     .padding_lrtb(2, 2, 1, 1)
     .title(title)
+}
+
+fn get_time(time: i64) -> Result<String> {
+    let f = format_description::parse("[offset_minute]:[offset_second]")?;
+    let offset = UtcOffset::from_whole_seconds(time.try_into()?)?;
+    let minute = offset.whole_minutes();
+    let date = offset.format(&f)?;
+    let sess = date
+        .split_once(':')
+        .and_then(|x| Some(x.1))
+        .ok_or_else(|| anyhow!("Can not convert time!"))?;
+    let date = format!("{}:{}", minute, sess);
+
+    Ok(date)
+}
+
+#[test]
+fn test_time() {    
+    assert_eq!(get_time(3601).unwrap(), "60:01");
+    assert_eq!(get_time(1).unwrap(), "0:01");
 }

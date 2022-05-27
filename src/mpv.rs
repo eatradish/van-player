@@ -4,7 +4,6 @@ use log::{error, info};
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         mpsc::{Receiver, Sender},
         Mutex,
     },
@@ -15,8 +14,8 @@ use anyhow::{anyhow, Result};
 #[derive(Debug)]
 pub struct MediaInfo {
     pub title: String,
-    pub duration: f64,
-    pub current_time: f64,
+    pub duration: i64,
+    pub current_time: i64,
 }
 
 pub const DEFAULT_VOL: f64 = 50.0;
@@ -25,7 +24,6 @@ lazy_static! {
     pub static ref MPV: Mpv = Mpv::new().expect("Can not init mpv");
     pub static ref QUEUE: Mutex<Vec<(String, FileState, Option<&'static str>)>> =
         Mutex::new(Vec::new());
-    pub static ref CURRENT: AtomicUsize = AtomicUsize::new(0);
 }
 
 macro_rules! check_err {
@@ -77,6 +75,19 @@ fn seekable_ranges(demuxer_cache_state: &MpvNode) -> Option<Vec<(f64, f64)>> {
     Some(res)
 }
 
+fn get_current_song_index() -> Result<i64> {
+    let current = MPV
+        .get_property::<i64>("playlist-pos")
+        .map_err(|e| anyhow!("{}", e))?;
+
+    Ok(current)
+}
+
+fn get_total_content() -> Result<i64> {
+    MPV.get_property::<i64>("playlist-count")
+        .map_err(|e| anyhow!("{}", e))
+}
+
 fn play_inner(
     vol_rx: Receiver<f64>,
     song_control_rx: Receiver<bool>,
@@ -97,62 +108,29 @@ fn play_inner(
     crossbeam::scope(|scope| {
         scope.spawn(move |_| {
             check_err!(MPV.set_property("vo", "null"), err_tx);
-            let current = CURRENT.load(Ordering::SeqCst);
             let queue = &*QUEUE.lock().unwrap();
             let queue = queue
                 .into_iter()
                 .map(|(x, y, z)| (x.as_str(), y.clone(), z.clone()))
                 .collect::<Vec<_>>();
-            check_err!(
-                MPV.playlist_load_files(&queue[current..]),
-                err_tx
-            );
+            check_err!(MPV.playlist_load_files(&queue), err_tx);
         });
         scope.spawn(move |_| loop {
-            let mut current = CURRENT.load(Ordering::SeqCst);
             if let Ok(v) = vol_rx.try_recv() {
                 check_err!(MPV.set_property("volume", v), err_tx_2);
             }
             if let Ok(next) = song_control_rx.try_recv() {
-                let queue = &*QUEUE.lock().unwrap();
-                let queue = queue
-                    .into_iter()
-                    .map(|(x, y, z)| (x.as_str(), y.clone(), z.clone()))
-                    .collect::<Vec<_>>();
                 if next {
-                    if current == queue.len() - 1 {
-                        check_err!(MPV.playlist_next_force(), err_tx_2);
-                        check_err!(MPV.playlist_load_files(&queue[current..]), err_tx_2);
-                        continue;
-                    } else {
-                        check_err!(MPV.playlist_next_force(), err_tx_2);
-                    }
+                    check_err!(MPV.playlist_next_weak(), err_tx_2);
                 } else {
-                    if current == 0 {
-                        current = queue.len() - 1;
-                        check_err!(MPV.playlist_previous_force(), err_tx_2);
-                        check_err!(MPV.playlist_load_files(&queue[current..]), err_tx_2);
-                        continue;
-                    } else {
-                        check_err!(MPV.playlist_previous_force(), err_tx_2);
-                    }
+                    check_err!(MPV.playlist_previous_weak(), err_tx_2);
                 }
             }
         });
         scope.spawn(move |_| loop {
             let ev = ev_ctx.wait_event(600.).unwrap_or(Err(Error::Null));
+            info!("{:?}", get_current_song_index());
             match ev {
-                Ok(Event::EndFile(_)) => {
-                    let current = CURRENT.load(Ordering::SeqCst);
-                    let queue = &*QUEUE.lock().unwrap();
-                    let queue = queue
-                        .into_iter()
-                        .map(|(x, y, z)| (x.as_str(), y.clone(), z.clone()))
-                        .collect::<Vec<_>>();
-                    if current < queue.len() - 1 {
-                        CURRENT.store(current + 1, Ordering::SeqCst);
-                    }
-                }
                 Ok(Event::PropertyChange {
                     name: "demuxer-cache-state",
                     change: PropertyData::Node(node),
@@ -160,22 +138,25 @@ fn play_inner(
                 }) => {
                     let current_media = get_current_media_info();
                     if let Ok(m) = current_media {
-                        info!("Send!, {:?}", m);
+                        info!("Send! {:?}", m);
                         getinfo_tx.send(m).ok();
                     }
                     info!("{:?}", seekable_ranges(node));
                 }
                 Ok(Event::Deprecated(_)) => {
-                    let queue = &*QUEUE.lock().unwrap();
-                    let queue = queue
-                        .into_iter()
-                        .map(|(x, y, z)| (x.as_str(), y.clone(), z.clone()))
-                        .collect::<Vec<_>>();
-                    check_err!(MPV.playlist_load_files(&queue), err_tx_3);
-                    CURRENT.store(0, Ordering::SeqCst);
+                    if get_total_content().ok()
+                        == get_current_song_index().ok().and_then(|x| Some(x + 1))
+                    {
+                        let queue = QUEUE.lock().unwrap();
+                        let queue_ref = queue
+                            .iter()
+                            .map(|(x, y, z)| (x.as_str(), y.clone(), z.clone()))
+                            .collect::<Vec<_>>();
+
+                        check_err!(MPV.playlist_load_files(&queue_ref), err_tx_3);
+                    }
                 }
-                Ok(e) => info!("Event triggered: {:?}", e),
-                Err(e) => error!("Event errored: {:?}", e),
+                _ => continue,
             }
         });
     })
@@ -193,10 +174,10 @@ pub fn get_current_media_info() -> Result<MediaInfo> {
         .get_property("media-title")
         .map_err(|e| anyhow!("{}", e))?;
     let duration = MPV
-        .get_property::<f64>("duration")
+        .get_property::<i64>("duration")
         .map_err(|e| anyhow!("{}", e))?;
     let current_time = MPV
-        .get_property::<f64>("time-pos")
+        .get_property::<i64>("time-pos")
         .map_err(|e| anyhow!("{}", e))?;
 
     return Ok(MediaInfo {
@@ -221,13 +202,15 @@ fn test_play() {
     let work = std::thread::spawn(|| {
         play(rx, control_rx, getinfo_tx).unwrap();
     });
-    tx.send(100.0).unwrap();
+    tx.send(50.0).unwrap();
     std::thread::sleep(Duration::from_secs(10));
+    dbg!(getinfo_rx.recv().ok());
+    control_tx.send(true).unwrap();
+    dbg!(get_current_song_index().unwrap());
     std::thread::sleep(Duration::from_secs(10));
     control_tx.send(true).unwrap();
     std::thread::sleep(Duration::from_secs(10));
-    control_tx.send(true).unwrap();
-    std::thread::sleep(Duration::from_secs(10));
+    dbg!(get_current_song_index().unwrap());
     control_tx.send(false).unwrap();
     work.join().unwrap();
 }
