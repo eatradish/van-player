@@ -85,9 +85,7 @@ fn main() {
         None,
     );
     let volume_tx_clone = volume_tx.clone();
-    let volume_tx_clone_2 = volume_tx.clone();
     let volume_status_clone = vol_status.clone();
-    let volume_status_clone_2 = vol_status.clone();
     let control_tx_clone = control_tx.clone();
 
     siv.add_global_callback('=', move |_| {
@@ -96,7 +94,7 @@ fn main() {
         }
     });
     siv.add_global_callback('-', move |_| {
-        if let Err(e) = reduce_volume(volume_tx_clone_2.clone(), volume_status_clone_2.clone()) {
+        if let Err(e) = reduce_volume(volume_tx.clone(), vol_status.clone()) {
             error!("{}", e);
         }
     });
@@ -153,7 +151,7 @@ fn get_time(time: i64) -> Result<String> {
     let date = offset.format(&f)?;
     let sess = date
         .split_once(':')
-        .and_then(|x| Some(x.1))
+        .map(|x| x.1)
         .ok_or_else(|| anyhow!("Can not convert time!"))?;
     let date = format!("{}:{}", minute, sess);
 
@@ -161,7 +159,7 @@ fn get_time(time: i64) -> Result<String> {
 }
 
 #[test]
-fn test_time() {    
+fn test_time() {
     assert_eq!(get_time(3601).unwrap(), "60:01");
     assert_eq!(get_time(1).unwrap(), "0:01");
 }

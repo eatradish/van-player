@@ -110,8 +110,8 @@ fn play_inner(
             check_err!(MPV.set_property("vo", "null"), err_tx);
             let queue = &*QUEUE.lock().unwrap();
             let queue = queue
-                .into_iter()
-                .map(|(x, y, z)| (x.as_str(), y.clone(), z.clone()))
+                .iter()
+                .map(|(x, y, z)| (x.as_str(), *y, *z))
                 .collect::<Vec<_>>();
             check_err!(MPV.playlist_load_files(&queue), err_tx);
         });
@@ -144,13 +144,11 @@ fn play_inner(
                     info!("{:?}", seekable_ranges(node));
                 }
                 Ok(Event::Deprecated(_)) => {
-                    if get_total_content().ok()
-                        == get_current_song_index().ok().and_then(|x| Some(x + 1))
-                    {
+                    if get_total_content().ok() == get_current_song_index().ok().map(|x| x + 1) {
                         let queue = QUEUE.lock().unwrap();
                         let queue_ref = queue
                             .iter()
-                            .map(|(x, y, z)| (x.as_str(), y.clone(), z.clone()))
+                            .map(|(x, y, z)| (x.as_str(), *y, *z))
                             .collect::<Vec<_>>();
 
                         check_err!(MPV.playlist_load_files(&queue_ref), err_tx_3);
@@ -180,11 +178,11 @@ pub fn get_current_media_info() -> Result<MediaInfo> {
         .get_property::<i64>("time-pos")
         .map_err(|e| anyhow!("{}", e))?;
 
-    return Ok(MediaInfo {
+    Ok(MediaInfo {
         title,
         duration,
         current_time,
-    });
+    })
 }
 
 #[test]
