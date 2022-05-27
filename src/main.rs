@@ -21,11 +21,16 @@ struct Args {
     args: Vec<String>,
 }
 
+pub enum VanControl {
+    SetVolume(f64),
+    NextSong,
+    PrevSong,
+}
+
 fn main() {
     cursive::logger::init();
     log::set_max_level(log::LevelFilter::Info);
     let mut siv = cursive::default();
-    let (volume_tx, volume_rx) = std::sync::mpsc::channel();
     let (control_tx, control_rx) = std::sync::mpsc::channel();
 
     let mut vol_view = TextView::new(format!("vol: {}", DEFAULT_VOL));
@@ -45,7 +50,7 @@ fn main() {
             // Call 'setlocale(LC_NUMERIC, "C");' in your code.
             let buf = std::ffi::CString::new("C").expect("Unknown Error!");
             unsafe { libc::setlocale(libc::LC_NUMERIC, buf.as_ptr()) };
-            if let Err(e) = mpv::play(volume_rx, control_rx, getinfo_tx) {
+            if let Err(e) = mpv::play(control_rx, getinfo_tx) {
                 eprintln!("{}", e);
                 std::process::exit(1);
             }
@@ -84,25 +89,26 @@ fn main() {
         "Van",
         None,
     );
-    let volume_tx_clone = volume_tx.clone();
     let volume_status_clone = vol_status.clone();
     let control_tx_clone = control_tx.clone();
+    let control_tx_clone_2 = control_tx.clone();
+    let control_tx_clone_3 = control_tx.clone();
 
     siv.add_global_callback('=', move |_| {
-        if let Err(e) = add_volume(volume_tx_clone.clone(), volume_status_clone.clone()) {
+        if let Err(e) = add_volume(control_tx.clone(), volume_status_clone.clone()) {
             error!("{}", e);
         }
     });
     siv.add_global_callback('-', move |_| {
-        if let Err(e) = reduce_volume(volume_tx.clone(), vol_status.clone()) {
+        if let Err(e) = reduce_volume(control_tx_clone_2.clone(), vol_status.clone()) {
             error!("{}", e);
         }
     });
     siv.add_global_callback(Event::Key(Key::Right), move |_| {
-        control_tx.send(true).unwrap();
+        control_tx_clone_3.send(VanControl::NextSong).unwrap();
     });
     siv.add_global_callback(Event::Key(Key::Left), move |_| {
-        control_tx_clone.send(false).unwrap();
+        control_tx_clone.send(VanControl::PrevSong).unwrap();
     });
 
     siv.add_global_callback('~', cursive::Cursive::toggle_debug_console);
@@ -112,22 +118,22 @@ fn main() {
     siv.run();
 }
 
-fn add_volume(volume_tx: Sender<f64>, vol_status: Arc<TextContent>) -> Result<()> {
+fn add_volume(control_tx: Sender<VanControl>, vol_status: Arc<TextContent>) -> Result<()> {
     let mut current_vol = mpv::get_volume()?;
     if current_vol < 100.0 {
         current_vol += 5.0;
-        volume_tx.send(current_vol)?;
+        control_tx.send(VanControl::SetVolume(current_vol))?;
         vol_status.set_content(format!("vol: {}", current_vol));
     }
 
     Ok(())
 }
 
-fn reduce_volume(volume_tx: Sender<f64>, vol_status: Arc<TextContent>) -> Result<()> {
+fn reduce_volume(control_tx: Sender<VanControl>, vol_status: Arc<TextContent>) -> Result<()> {
     let mut current_vol = mpv::get_volume()?;
     if current_vol > 0.0 {
         current_vol -= 5.0;
-        volume_tx.send(current_vol)?;
+        control_tx.send(VanControl::SetVolume(current_vol))?;
         vol_status.set_content(format!("vol: {}", current_vol));
     }
 

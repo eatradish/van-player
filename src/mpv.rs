@@ -11,6 +11,8 @@ use std::{
 
 use anyhow::{anyhow, Result};
 
+use crate::VanControl;
+
 #[derive(Debug)]
 pub struct MediaInfo {
     pub title: String,
@@ -43,14 +45,10 @@ pub fn add(url: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn play(
-    vol_rx: Receiver<f64>,
-    control_rx: Receiver<bool>,
-    getinfo_tx: Sender<MediaInfo>,
-) -> Result<()> {
+pub fn play(control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInfo>) -> Result<()> {
     MPV.set_property("volume", DEFAULT_VOL)
         .map_err(|e| anyhow!("{}", e))?;
-    play_inner(vol_rx, control_rx, getinfo_tx)?;
+    play_inner(control_rx, getinfo_tx)?;
 
     Ok(())
 }
@@ -88,11 +86,7 @@ fn get_total_content() -> Result<i64> {
         .map_err(|e| anyhow!("{}", e))
 }
 
-fn play_inner(
-    vol_rx: Receiver<f64>,
-    song_control_rx: Receiver<bool>,
-    getinfo_tx: Sender<MediaInfo>,
-) -> Result<()> {
+fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInfo>) -> Result<()> {
     let mut ev_ctx = MPV.create_event_context();
     ev_ctx
         .observe_property("volume", Format::Int64, 0)
@@ -116,14 +110,13 @@ fn play_inner(
             check_err!(MPV.playlist_load_files(&queue), err_tx);
         });
         scope.spawn(move |_| loop {
-            if let Ok(v) = vol_rx.try_recv() {
-                check_err!(MPV.set_property("volume", v), err_tx_2);
-            }
-            if let Ok(next) = song_control_rx.try_recv() {
-                if next {
-                    check_err!(MPV.playlist_next_weak(), err_tx_2);
-                } else {
-                    check_err!(MPV.playlist_previous_weak(), err_tx_2);
+            if let Ok(v) = song_control_rx.try_recv() {
+                match v {
+                    VanControl::SetVolume(vol) => {
+                        check_err!(MPV.set_property("volume", vol), err_tx_2)
+                    }
+                    VanControl::NextSong => check_err!(MPV.playlist_next_weak(), err_tx_2),
+                    VanControl::PrevSong => check_err!(MPV.playlist_previous_weak(), err_tx_2),
                 }
             }
         });
@@ -188,9 +181,8 @@ pub fn get_current_media_info() -> Result<MediaInfo> {
 #[test]
 fn test_play() {
     use std::time::Duration;
-    let (tx, rx) = std::sync::mpsc::channel();
-    let (control_tx, control_rx) = std::sync::mpsc::channel();
     let (getinfo_tx, getinfo_rx) = std::sync::mpsc::channel();
+    let (control_tx, control_rx) = std::sync::mpsc::channel();
     add("https://www.bilibili.com/video/BV1gr4y1b7vN").unwrap();
     add("https://www.bilibili.com/video/BV1GR4y1w7CR").unwrap();
     add("https://www.bilibili.com/video/BV133411V7dY").unwrap();
@@ -198,17 +190,17 @@ fn test_play() {
     add("https://www.bilibili.com/video/BV18B4y127QA").unwrap();
     add("https://www.bilibili.com/video/BV1NY4y1t7hx?p=7").unwrap();
     let work = std::thread::spawn(|| {
-        play(rx, control_rx, getinfo_tx).unwrap();
+        play(control_rx, getinfo_tx).unwrap();
     });
-    tx.send(50.0).unwrap();
+    control_tx.send(VanControl::SetVolume(50.0)).unwrap();
     std::thread::sleep(Duration::from_secs(10));
     dbg!(getinfo_rx.recv().ok());
-    control_tx.send(true).unwrap();
+    control_tx.send(VanControl::NextSong).unwrap();
     dbg!(get_current_song_index().unwrap());
     std::thread::sleep(Duration::from_secs(10));
-    control_tx.send(true).unwrap();
+    control_tx.send(VanControl::NextSong).unwrap();
     std::thread::sleep(Duration::from_secs(10));
     dbg!(get_current_song_index().unwrap());
-    control_tx.send(false).unwrap();
+    control_tx.send(VanControl::PrevSong).unwrap();
     work.join().unwrap();
 }
