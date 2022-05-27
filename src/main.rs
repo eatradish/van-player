@@ -25,6 +25,7 @@ pub enum VanControl {
     SetVolume(f64),
     NextSong,
     PrevSong,
+    PauseControl,
 }
 
 fn main() {
@@ -93,6 +94,7 @@ fn main() {
     let control_tx_clone = control_tx.clone();
     let control_tx_clone_2 = control_tx.clone();
     let control_tx_clone_3 = control_tx.clone();
+    let control_tx_clone_4 = control_tx.clone();
 
     siv.add_global_callback('=', move |_| {
         if let Err(e) = add_volume(control_tx.clone(), volume_status_clone.clone()) {
@@ -109,6 +111,9 @@ fn main() {
     });
     siv.add_global_callback(Event::Key(Key::Left), move |_| {
         control_tx_clone.send(VanControl::PrevSong).unwrap();
+    });
+    siv.add_global_callback('p', move |_| {
+        control_tx_clone_4.send(VanControl::PauseControl).unwrap();
     });
 
     siv.add_global_callback('~', cursive::Cursive::toggle_debug_console);

@@ -117,12 +117,19 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInf
                     }
                     VanControl::NextSong => check_err!(MPV.playlist_next_weak(), err_tx_2),
                     VanControl::PrevSong => check_err!(MPV.playlist_previous_weak(), err_tx_2),
+                    VanControl::PauseControl => {
+                        let is_pause = MPV.get_property::<bool>("pause").ok();
+                        if is_pause == Some(false) {
+                            check_err!(MPV.pause(), err_tx_2);
+                        } else if is_pause == Some(true) {
+                            check_err!(MPV.unpause(), err_tx_2);
+                        }
+                    }
                 }
             }
         });
         scope.spawn(move |_| loop {
             let ev = ev_ctx.wait_event(600.).unwrap_or(Err(Error::Null));
-            info!("{:?}", get_current_song_index());
             match ev {
                 Ok(Event::PropertyChange {
                     name: "demuxer-cache-state",
