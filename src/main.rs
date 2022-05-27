@@ -80,7 +80,7 @@ fn main() {
             .child(DummyView {})
             .child(current_time_view.center())
             .child(DummyView {})
-            .child(vol_view),
+            .child(vol_view.center()),
         "Van",
         None,
     );
