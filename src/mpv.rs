@@ -34,7 +34,6 @@ macro_rules! check_err {
         if let Err(e) = $i {
             $err_tx.send(e.to_string()).unwrap();
             error!("{}", e);
-            return;
         }
     };
 }
@@ -109,6 +108,7 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInf
                 .map(|(x, y, z)| (x.as_str(), *y, *z))
                 .collect::<Vec<_>>();
             check_err!(MPV.playlist_load_files(&queue), err_tx);
+            return;
         });
         scope.spawn(move |_| loop {
             if let Ok(v) = song_control_rx.try_recv() {
@@ -122,8 +122,10 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInf
                         let is_pause = MPV.get_property::<bool>("pause").ok();
                         if is_pause == Some(false) {
                             check_err!(MPV.pause(), err_tx_2);
+                            continue;
                         } else if is_pause == Some(true) {
                             check_err!(MPV.unpause(), err_tx_2);
+                            continue;
                         }
                     }
                 }
@@ -153,6 +155,7 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInf
                             .collect::<Vec<_>>();
 
                         check_err!(MPV.playlist_load_files(&queue_ref), err_tx_3);
+                        continue;
                     }
                 }
                 _ => continue,
