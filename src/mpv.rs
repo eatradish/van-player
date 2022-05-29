@@ -16,6 +16,7 @@ use crate::VanControl;
 #[derive(Debug)]
 pub struct MediaInfo {
     pub title: String,
+    pub artist: String,
     pub duration: i64,
     pub current_time: i64,
 }
@@ -171,15 +172,15 @@ pub fn get_current_media_info() -> Result<MediaInfo> {
     let title = MPV
         .get_property("media-title")
         .map_err(|e| anyhow!("{}", e))?;
-    let duration = MPV
-        .get_property::<i64>("duration")
+    let duration = MPV.get_property("duration").map_err(|e| anyhow!("{}", e))?;
+    let artist = MPV
+        .get_property::<String>("metadata/by-key/Uploader")
         .map_err(|e| anyhow!("{}", e))?;
-    let current_time = MPV
-        .get_property::<i64>("time-pos")
-        .map_err(|e| anyhow!("{}", e))?;
+    let current_time = MPV.get_property("time-pos").map_err(|e| anyhow!("{}", e))?;
 
     Ok(MediaInfo {
         title,
+        artist,
         duration,
         current_time,
     })
@@ -200,7 +201,7 @@ fn test_play() {
         play(control_rx, getinfo_tx).unwrap();
     });
     control_tx.send(VanControl::SetVolume(50.0)).unwrap();
-    std::thread::sleep(Duration::from_secs(10));
+    dbg!("a");
     dbg!(getinfo_rx.recv().ok());
     control_tx.send(VanControl::NextSong).unwrap();
     dbg!(get_current_song_index().unwrap());

@@ -43,6 +43,10 @@ fn main() {
     let mut current_time_view = TextView::new("-/-");
     let current_time_status = Arc::new(current_time_view.get_shared_content());
 
+    let mut current_artist_view = TextView::new("Unknown");
+    let current_artist_status = Arc::new(current_artist_view.get_shared_content());
+
+
     std::thread::spawn(move || {
         let (getinfo_tx, getinfo_rx) = std::sync::mpsc::channel();
         let current_song_status_clone = current_song_status.clone();
@@ -61,6 +65,7 @@ fn main() {
             if let Ok(m) = getinfo_rx.try_recv() {
                 info!("Recviver! {:?}", m);
                 current_song_status_clone.set_content(m.title);
+                current_artist_status.set_content(m.artist);
                 if let Ok(current_time) = get_time(m.current_time) {
                     s = s.replace("-/", &format!("{}/", current_time));
                 }
@@ -83,6 +88,8 @@ fn main() {
     let view = wrap_in_dialog(
         LinearLayout::vertical()
             .child(current_song_view.center())
+            .child(DummyView {})
+            .child(current_artist_view.center())
             .child(DummyView {})
             .child(current_time_view.center())
             .child(DummyView {})
