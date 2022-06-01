@@ -11,7 +11,12 @@ use std::{
     },
 };
 
-use crate::VanControl;
+pub enum VanControl {
+    SetVolume(f64),
+    NextSong,
+    PrevSong,
+    PauseControl,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MediaInfo {
@@ -28,7 +33,7 @@ pub enum PlayStatus {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PlayList {
+pub struct PlayListItem {
     pub filename: String,
     pub current: Option<bool>,
     pub playing: Option<bool>,
@@ -38,8 +43,8 @@ pub struct PlayList {
 pub const DEFAULT_VOL: f64 = 50.0;
 
 lazy_static! {
-    pub static ref MPV: Mpv = Mpv::new().expect("Can not init mpv");
-    pub static ref QUEUE: Mutex<Vec<(String, FileState, Option<&'static str>)>> =
+    static ref MPV: Mpv = Mpv::new().expect("Can not init mpv");
+    static ref QUEUE: Mutex<Vec<(String, FileState, Option<&'static str>)>> =
         Mutex::new(Vec::new());
 }
 
@@ -205,7 +210,7 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
     Ok(())
 }
 
-pub fn get_playlist() -> Result<Vec<PlayList>> {
+pub fn get_playlist() -> Result<Vec<PlayListItem>> {
     let playlist = MPV
         .get_property::<String>("playlist")
         .map_err(|e| anyhow!("{}", e))?;

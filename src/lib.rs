@@ -1,3 +1,5 @@
+mod mpv;
+
 use anyhow::{anyhow, Result};
 use std::sync::{
     mpsc::{Receiver, Sender},
@@ -14,25 +16,18 @@ use cursive::{
     },
     Cursive, View,
 };
-use log::{error, info};
+use log::error;
 use mpv::{force_play, get_file_name, get_playlist, DEFAULT_VOL};
 
-use crate::mpv::PlayStatus;
+use mpv::VanControl;
 
-mod mpv;
+use mpv::PlayStatus;
 
 #[derive(Parser, Debug)]
 #[clap(about, version, author)]
 struct Args {
     #[clap()]
     args: Vec<String>,
-}
-
-pub enum VanControl {
-    SetVolume(f64),
-    NextSong,
-    PrevSong,
-    PauseControl,
 }
 
 struct CurrentStatus {
@@ -42,10 +37,7 @@ struct CurrentStatus {
     current_time_status: Arc<TextContent>,
 }
 
-fn main() {
-    cursive::logger::init();
-    log::set_max_level(log::LevelFilter::Info);
-    let mut siv = cursive::default();
+pub fn init_siv(siv: &mut Cursive) -> Result<()> {
     let (control_tx, control_rx) = std::sync::mpsc::channel();
 
     let (view, current_status) = get_view();
@@ -61,16 +53,14 @@ fn main() {
 
     let args = Args::parse().args;
     for i in args {
-        if let Err(e) = mpv::add(&i) {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
+        mpv::add(&i)?;
     }
 
-    set_cursive(vol_status, control_tx, &mut siv);
+    set_cursive(vol_status, control_tx, siv);
 
     siv.add_layer(view);
-    siv.run();
+
+    Ok(())
 }
 
 fn set_cursive(vol_status: Arc<TextContent>, control_tx: Sender<VanControl>, siv: &mut Cursive) {
@@ -270,10 +260,4 @@ fn get_time(time: i64) -> Result<String> {
     let date = format!("{}:{}", minute, sess);
 
     Ok(date)
-}
-
-#[test]
-fn test_time() {
-    assert_eq!(get_time(3601).unwrap(), "60:01");
-    assert_eq!(get_time(1).unwrap(), "0:01");
 }
