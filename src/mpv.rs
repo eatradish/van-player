@@ -1,6 +1,8 @@
+use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use libmpv::{events::*, *};
 use log::{error, info};
+use serde::Deserialize;
 use std::{
     collections::HashMap,
     sync::{
@@ -8,8 +10,6 @@ use std::{
         Mutex,
     },
 };
-
-use anyhow::{anyhow, Result};
 
 use crate::VanControl;
 
@@ -25,6 +25,14 @@ pub struct MediaInfo {
 pub enum PlayStatus {
     MediaInfo(MediaInfo),
     Loading,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlayList {
+    pub filename: String,
+    pub current: Option<bool>,
+    pub playing: Option<bool>,
+    pub id: i32,
 }
 
 pub const DEFAULT_VOL: f64 = 50.0;
@@ -96,6 +104,13 @@ pub fn get_file_name() -> Result<String> {
     MPV.get_property("filename").map_err(|e| anyhow!("{}", e))
 }
 
+pub fn force_play(count: i64) -> Result<()> {
+    MPV.set_property("playlist-pos", count)
+        .map_err(|e| anyhow!("{}", e))?;
+
+    Ok(())
+}
+
 fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStatus>) -> Result<()> {
     let mut ev_ctx = MPV.create_event_context();
     ev_ctx
@@ -128,10 +143,10 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
             let current_media = get_current_media_info();
             if let Ok(m) = current_media {
                 getinfo_tx.send(PlayStatus::MediaInfo(m.clone())).ok();
-                info!("Send! {:?}", m);
+                // info!("Send! {:?}", m);
             } else {
                 getinfo_tx.send(PlayStatus::Loading).ok();
-                info!("Send! Control song");
+                // info!("Send! Control song");
             }
             if let Ok(v) = song_control_rx.try_recv() {
                 match v {
@@ -188,6 +203,15 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
     }
 
     Ok(())
+}
+
+pub fn get_playlist() -> Result<Vec<PlayList>> {
+    let playlist = MPV
+        .get_property::<String>("playlist")
+        .map_err(|e| anyhow!("{}", e))?;
+    let playlist = serde_json::from_str(&playlist)?;
+
+    Ok(playlist)
 }
 
 pub fn get_current_media_info() -> Result<MediaInfo> {

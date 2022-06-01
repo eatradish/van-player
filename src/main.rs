@@ -9,11 +9,13 @@ use clap::Parser;
 use cursive::{
     event::{Event, Key},
     view::SizeConstraint,
-    views::{Dialog, DummyView, LinearLayout, ResizedView, ScrollView, TextContent, TextView},
+    views::{
+        Dialog, DummyView, LinearLayout, ResizedView, ScrollView, SelectView, TextContent, TextView,
+    },
     Cursive, View,
 };
 use log::{error, info};
-use mpv::{get_file_name, DEFAULT_VOL};
+use mpv::{force_play, get_file_name, get_playlist, DEFAULT_VOL};
 
 use crate::mpv::PlayStatus;
 
@@ -97,6 +99,9 @@ fn set_cursive(vol_status: Arc<TextContent>, control_tx: Sender<VanControl>, siv
     siv.add_global_callback('p', move |_| {
         control_tx_clone_4.send(VanControl::PauseControl).unwrap();
     });
+    siv.add_global_callback('l', move |s| {
+        playlist_view(s);
+    });
     siv.add_global_callback('~', cursive::Cursive::toggle_debug_console);
     siv.set_autorefresh(true);
 }
@@ -138,6 +143,39 @@ fn get_view() -> (Dialog, CurrentStatus) {
     )
 }
 
+fn playlist_view(siv: &mut Cursive) {
+    let playlist = get_playlist();
+    let mut files = vec![];
+    if let Ok(playlist) = playlist {
+        for i in playlist {
+            files.push(i.filename);
+        }
+    } else {
+        error!("{:?}", playlist.unwrap_err());
+    }
+    let view = wrap_in_dialog(
+        SelectView::new()
+            .with_all_str(files.clone())
+            .on_submit(move |s, c: &String| {
+                let index = files.clone().iter().position(|x| x == c);
+                if let Some(index) = index {
+                    force_play(index.try_into().unwrap()).ok();
+                }
+                s.pop_layer();
+            }),
+        "Playlist",
+        None,
+    )
+    .button("Back", |s| {
+        s.cb_sink()
+            .send(Box::new(|s| {
+                s.pop_layer();
+            }))
+            .unwrap();
+    });
+    siv.add_layer(view);
+}
+
 fn start_mpv(current_status: CurrentStatus, control_rx: Receiver<VanControl>) {
     std::thread::spawn(move || {
         let (getinfo_tx, getinfo_rx) = std::sync::mpsc::channel();
@@ -156,7 +194,7 @@ fn start_mpv(current_status: CurrentStatus, control_rx: Receiver<VanControl>) {
             let mut time_str = String::from("-/-");
             let r = getinfo_rx.try_recv();
             if let Ok(status) = r {
-                info!("Recviver! {:?}", status);
+                // info!("Recviver! {:?}", status);
                 match status {
                     PlayStatus::MediaInfo(m) => {
                         current_song_status_clone.set_content(m.title);
