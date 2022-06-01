@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use std::{sync::{mpsc::Sender, Arc}, time::Duration};
+use std::sync::{mpsc::Sender, Arc};
 use time::{format_description, UtcOffset};
 
 use clap::Parser;
@@ -11,6 +11,8 @@ use cursive::{
 };
 use log::{error, info};
 use mpv::{get_file_name, DEFAULT_VOL};
+
+use crate::mpv::PlayStatus;
 
 mod mpv;
 
@@ -59,27 +61,31 @@ fn main() {
                 std::process::exit(1);
             }
         });
-        let mut is_set = false;
         loop {
             let mut time_str = String::from("-/-");
-            if let Ok(m) = getinfo_rx.recv_timeout(Duration::from_millis(300)) {
-                if !is_set {
-                    info!("Recviver! {:?}", m);
-
-                    current_song_status_clone.set_content(m.title);
-                    current_artist_status.set_content(m.artist);
-                    if let Ok(current_time) = get_time(m.current_time) {
-                        time_str = time_str.replace("-/", &format!("{}/", current_time));
+            let r = getinfo_rx.try_recv();
+            if let Ok(status) = r {
+                info!("Recviver! {:?}", status);
+                match status {
+                    PlayStatus::MediaInfo(m) => {
+                        current_song_status_clone.set_content(m.title);
+                        current_artist_status.set_content(m.artist);
+                        if let Ok(current_time) = get_time(m.current_time) {
+                            time_str = time_str.replace("-/", &format!("{}/", current_time));
+                        }
+                        if let Ok(duration) = get_time(m.duration) {
+                            time_str = time_str.replace("/-", &format!("/{}", duration));
+                        }
+                        current_time_status.set_content(time_str);
                     }
-                    if let Ok(duration) = get_time(m.duration) {
-                        time_str = time_str.replace("/-", &format!("/{}", duration));
+                    PlayStatus::ContolSong => {
+                        if let Ok(name) = get_file_name() {
+                            current_song_status.clone().set_content(name);
+                            current_artist_status.clone().set_content("Unknown");
+                            current_time_status.clone().set_content("-/-")
+                        }
                     }
-                    current_time_status.set_content(time_str);
-                    is_set = true;
                 }
-            } else if let Ok(name) = get_file_name() {
-                current_song_status_clone.set_content(name);
-                is_set = false;
             }
         }
     });

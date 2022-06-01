@@ -13,12 +13,18 @@ use anyhow::{anyhow, Result};
 
 use crate::VanControl;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MediaInfo {
     pub title: String,
     pub artist: String,
     pub duration: i64,
     pub current_time: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PlayStatus {
+    MediaInfo(MediaInfo),
+    ContolSong,
 }
 
 pub const DEFAULT_VOL: f64 = 50.0;
@@ -45,7 +51,7 @@ pub fn add(url: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn play(control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInfo>) -> Result<()> {
+pub fn play(control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStatus>) -> Result<()> {
     MPV.set_property("volume", DEFAULT_VOL)
         .map_err(|e| anyhow!("{}", e))?;
     play_inner(control_rx, getinfo_tx)?;
@@ -90,7 +96,7 @@ pub fn get_file_name() -> Result<String> {
     MPV.get_property("filename").map_err(|e| anyhow!("{}", e))
 }
 
-fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInfo>) -> Result<()> {
+fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStatus>) -> Result<()> {
     let mut ev_ctx = MPV.create_event_context();
     ev_ctx
         .observe_property("volume", Format::Int64, 0)
@@ -101,7 +107,6 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInf
 
     let (err_tx, err_rx) = std::sync::mpsc::channel();
     let err_tx_2 = err_tx.clone();
-    let err_tx_3 = err_tx.clone();
 
     crossbeam::scope(|scope| {
         scope.spawn(move |_| {
@@ -119,6 +124,15 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInf
             return;
         });
         scope.spawn(move |_| loop {
+            let ev = ev_ctx.wait_event(600.).unwrap_or(Err(Error::Null));
+            let current_media = get_current_media_info();
+            if let Ok(m) = current_media {
+                getinfo_tx.send(PlayStatus::MediaInfo(m.clone())).ok();
+                info!("Send! {:?}", m); 
+            } else {
+                getinfo_tx.send(PlayStatus::ContolSong).ok();
+                info!("Send! Control song"); 
+            }
             if let Ok(v) = song_control_rx.try_recv() {
                 match v {
                     VanControl::SetVolume(vol) => {
@@ -138,20 +152,12 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInf
                     }
                 }
             }
-        });
-        scope.spawn(move |_| loop {
-            let ev = ev_ctx.wait_event(600.).unwrap_or(Err(Error::Null));
             match ev {
                 Ok(Event::PropertyChange {
                     name: "demuxer-cache-state",
                     change: PropertyData::Node(node),
                     ..
                 }) => {
-                    let current_media = get_current_media_info();
-                    if let Ok(m) = current_media {
-                        getinfo_tx.send(m.clone()).ok();
-                        info!("Send! {:?}", m);
-                    }
                     info!("{:?}", seekable_ranges(node));
                 }
                 Ok(Event::Deprecated(_)) => {
@@ -162,7 +168,7 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInf
                             .map(|(x, y, z)| (x.as_str(), *y, *z))
                             .collect::<Vec<_>>();
 
-                        check_err!(MPV.playlist_load_files(&queue_ref), err_tx_3);
+                        check_err!(MPV.playlist_load_files(&queue_ref), err_tx_2);
                         continue;
                     }
                 }
