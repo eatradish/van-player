@@ -24,7 +24,7 @@ pub struct MediaInfo {
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlayStatus {
     MediaInfo(MediaInfo),
-    ContolSong,
+    Loading,
 }
 
 pub const DEFAULT_VOL: f64 = 50.0;
@@ -123,7 +123,6 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
                 .map(|(x, y, z)| (x.as_str(), *y, *z))
                 .collect::<Vec<_>>();
             check_err!(MPV.playlist_load_files(&queue), err_tx);
-            return;
         });
         scope.spawn(move |_| loop {
             let current_media = get_current_media_info();
@@ -131,7 +130,7 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
                 getinfo_tx.send(PlayStatus::MediaInfo(m.clone())).ok();
                 info!("Send! {:?}", m);
             } else {
-                getinfo_tx.send(PlayStatus::ContolSong).ok();
+                getinfo_tx.send(PlayStatus::Loading).ok();
                 info!("Send! Control song");
             }
             if let Ok(v) = song_control_rx.try_recv() {
@@ -140,21 +139,19 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
                         check_err!(MPV.set_property("volume", vol), err_tx_2)
                     }
                     VanControl::NextSong => {
-                        getinfo_tx.send(PlayStatus::ContolSong).ok();
+                        getinfo_tx.send(PlayStatus::Loading).ok();
                         check_err!(MPV.playlist_next_weak(), err_tx_2)
                     }
                     VanControl::PrevSong => {
-                        getinfo_tx.send(PlayStatus::ContolSong).ok();
+                        getinfo_tx.send(PlayStatus::Loading).ok();
                         check_err!(MPV.playlist_previous_weak(), err_tx_2)
                     }
                     VanControl::PauseControl => {
                         let is_pause = MPV.get_property::<bool>("pause").ok();
                         if is_pause == Some(false) {
                             check_err!(MPV.pause(), err_tx_2);
-                            continue;
                         } else if is_pause == Some(true) {
                             check_err!(MPV.unpause(), err_tx_2);
-                            continue;
                         }
                     }
                 }
@@ -179,7 +176,6 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
                             .collect::<Vec<_>>();
 
                         check_err!(MPV.playlist_load_files(&queue_ref), err_tx_3);
-                        continue;
                     }
                 }
                 _ => continue,
