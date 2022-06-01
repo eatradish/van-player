@@ -37,6 +37,7 @@ struct CurrentStatus {
     current_time_status: Arc<TextContent>,
 }
 
+/// Init Cursive view
 pub fn init_siv(siv: &mut Cursive) -> Result<()> {
     let (control_tx, control_rx) = std::sync::mpsc::channel();
 
