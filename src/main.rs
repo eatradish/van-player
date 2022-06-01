@@ -59,23 +59,27 @@ fn main() {
                 std::process::exit(1);
             }
         });
+        let mut is_set = false;
         loop {
             let mut time_str = String::from("-/-");
-            let r =  getinfo_rx.recv_timeout(Duration::from_millis(300));
-            if let Ok(m) = r {
-                info!("Recviver! {:?}", m);
+            if let Ok(m) = getinfo_rx.recv_timeout(Duration::from_millis(300)) {
+                if !is_set {
+                    info!("Recviver! {:?}", m);
 
-                current_song_status_clone.set_content(m.title);
-                current_artist_status.set_content(m.artist);
-                if let Ok(current_time) = get_time(m.current_time) {
-                    time_str = time_str.replace("-/", &format!("{}/", current_time));
+                    current_song_status_clone.set_content(m.title);
+                    current_artist_status.set_content(m.artist);
+                    if let Ok(current_time) = get_time(m.current_time) {
+                        time_str = time_str.replace("-/", &format!("{}/", current_time));
+                    }
+                    if let Ok(duration) = get_time(m.duration) {
+                        time_str = time_str.replace("/-", &format!("/{}", duration));
+                    }
+                    current_time_status.set_content(time_str);
+                    is_set = true;
                 }
-                if let Ok(duration) = get_time(m.duration) {
-                    time_str = time_str.replace("/-", &format!("/{}", duration));
-                }
-                current_time_status.set_content(time_str);
             } else if let Ok(name) = get_file_name() {
                 current_song_status_clone.set_content(name);
+                is_set = false;
             }
         }
     });
