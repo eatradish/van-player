@@ -109,7 +109,6 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
     let err_tx_2 = err_tx.clone();
     let err_tx_3 = err_tx.clone();
 
-
     crossbeam::scope(|scope| {
         scope.spawn(move |_| {
             check_err!(
@@ -125,6 +124,7 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
             check_err!(MPV.playlist_load_files(&queue), err_tx);
         });
         scope.spawn(move |_| loop {
+            // info!("{:?}", MPV.get_property::<String>("playlist"));
             let current_media = get_current_media_info();
             if let Ok(m) = current_media {
                 getinfo_tx.send(PlayStatus::MediaInfo(m.clone())).ok();
@@ -156,6 +156,15 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
                     }
                 }
             }
+            if get_total_content().ok() == get_current_song_index().ok().map(|x| x + 1) {
+                let queue = QUEUE.lock().unwrap();
+                let queue_ref = queue
+                    .iter()
+                    .map(|(x, y, z)| (x.as_str(), *y, *z))
+                    .collect::<Vec<_>>();
+
+                check_err!(MPV.playlist_load_files(&queue_ref), err_tx_3);
+            }
         });
         scope.spawn(move |_| loop {
             let ev = ev_ctx.wait_event(600.).unwrap_or(Err(Error::Null));
@@ -167,18 +176,8 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
                 }) => {
                     info!("{:?}", seekable_ranges(node));
                 }
-                Ok(Event::Deprecated(_)) => {
-                    if get_total_content().ok() == get_current_song_index().ok().map(|x| x + 1) {
-                        let queue = QUEUE.lock().unwrap();
-                        let queue_ref = queue
-                            .iter()
-                            .map(|(x, y, z)| (x.as_str(), *y, *z))
-                            .collect::<Vec<_>>();
-
-                        check_err!(MPV.playlist_load_files(&queue_ref), err_tx_3);
-                    }
-                }
-                _ => continue,
+                Ok(v) => info!("{:?}", v),
+                Err(e) => error!("{}", e),
             }
         });
     })

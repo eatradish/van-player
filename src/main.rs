@@ -1,5 +1,8 @@
 use anyhow::{anyhow, Result};
-use std::sync::{mpsc::Sender, Arc};
+use std::sync::{
+    mpsc::{Receiver, Sender},
+    Arc,
+};
 use time::{format_description, UtcOffset};
 
 use clap::Parser;
@@ -7,7 +10,7 @@ use cursive::{
     event::{Event, Key},
     view::SizeConstraint,
     views::{Dialog, DummyView, LinearLayout, ResizedView, ScrollView, TextContent, TextView},
-    View,
+    Cursive, View,
 };
 use log::{error, info};
 use mpv::{get_file_name, DEFAULT_VOL};
@@ -68,16 +71,13 @@ fn main() {
     siv.run();
 }
 
-fn set_cursive(
-    vol_status: Arc<TextContent>,
-    control_tx: Sender<VanControl>,
-    siv: &mut cursive::CursiveRunnable,
-) {
+fn set_cursive(vol_status: Arc<TextContent>, control_tx: Sender<VanControl>, siv: &mut Cursive) {
     let volume_status_clone = vol_status.clone();
     let control_tx_clone = control_tx.clone();
     let control_tx_clone_2 = control_tx.clone();
     let control_tx_clone_3 = control_tx.clone();
     let control_tx_clone_4 = control_tx.clone();
+
     siv.add_global_callback('=', move |_| {
         if let Err(e) = add_volume(control_tx.clone(), volume_status_clone.clone()) {
             error!("{}", e);
@@ -138,7 +138,7 @@ fn get_view() -> (Dialog, CurrentStatus) {
     )
 }
 
-fn start_mpv(current_status: CurrentStatus, control_rx: std::sync::mpsc::Receiver<VanControl>) {
+fn start_mpv(current_status: CurrentStatus, control_rx: Receiver<VanControl>) {
     std::thread::spawn(move || {
         let (getinfo_tx, getinfo_rx) = std::sync::mpsc::channel();
         let current_song_status_clone = current_status.current_song_status.clone();
@@ -179,7 +179,7 @@ fn start_mpv(current_status: CurrentStatus, control_rx: std::sync::mpsc::Receive
                             current_status
                                 .current_time_status
                                 .clone()
-                                .set_content("-/-")
+                                .set_content("-/-");
                         }
                     }
                 }
