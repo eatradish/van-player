@@ -101,6 +101,7 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInf
 
     crossbeam::scope(|scope| {
         scope.spawn(move |_| {
+            check_err!(MPV.set_property("options/ytdl-raw-options", "yes-playlist="), err_tx);
             check_err!(MPV.set_property("vo", "null"), err_tx);
             let queue = &*QUEUE.lock().unwrap();
             let queue = queue
@@ -194,18 +195,13 @@ fn test_play() {
     use std::time::Duration;
     let (getinfo_tx, getinfo_rx) = std::sync::mpsc::channel();
     let (control_tx, control_rx) = std::sync::mpsc::channel();
-    add("https://www.bilibili.com/video/BV1gr4y1b7vN").unwrap();
-    add("https://www.bilibili.com/video/BV1GR4y1w7CR").unwrap();
-    add("https://www.bilibili.com/video/BV133411V7dY").unwrap();
-    add("https://www.bilibili.com/video/BV1WL4y1F7Uj").unwrap();
-    add("https://www.bilibili.com/video/BV18B4y127QA").unwrap();
-    add("https://www.bilibili.com/video/BV1NY4y1t7hx?p=7").unwrap();
+    add("https://www.bilibili.com/video/BV1NY4y1t7hx").unwrap();
     let work = std::thread::spawn(|| {
         play(control_rx, getinfo_tx).unwrap();
     });
     control_tx.send(VanControl::SetVolume(50.0)).unwrap();
-    dbg!("a");
-    dbg!(getinfo_rx.recv().ok());
+    dbg!(getinfo_rx.recv().unwrap());
+    dbg!(get_current_song_index().unwrap());
     control_tx.send(VanControl::NextSong).unwrap();
     dbg!(get_current_song_index().unwrap());
     std::thread::sleep(Duration::from_secs(10));
