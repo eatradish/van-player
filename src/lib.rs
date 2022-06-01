@@ -38,6 +38,18 @@ struct CurrentStatus {
 }
 
 /// Init Cursive view
+/// ```rust
+/// use cursive::{Cursive, CursiveExt};
+///
+/// let mut siv = Cursive::default();
+/// 
+/// if let Err(e) = van_player::init_siv(&mut siv) {
+///     eprintln!("{}", e);
+///     std::process::exit(1);
+/// }
+/// 
+/// siv.run();
+/// ```
 pub fn init_siv(siv: &mut Cursive) -> Result<()> {
     let (control_tx, control_rx) = std::sync::mpsc::channel();
 
