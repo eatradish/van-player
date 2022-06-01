@@ -107,6 +107,8 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
 
     let (err_tx, err_rx) = std::sync::mpsc::channel();
     let err_tx_2 = err_tx.clone();
+    let err_tx_3 = err_tx.clone();
+
 
     crossbeam::scope(|scope| {
         scope.spawn(move |_| {
@@ -124,22 +126,27 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
             return;
         });
         scope.spawn(move |_| loop {
-            let ev = ev_ctx.wait_event(600.).unwrap_or(Err(Error::Null));
             let current_media = get_current_media_info();
             if let Ok(m) = current_media {
                 getinfo_tx.send(PlayStatus::MediaInfo(m.clone())).ok();
-                info!("Send! {:?}", m); 
+                info!("Send! {:?}", m);
             } else {
                 getinfo_tx.send(PlayStatus::ContolSong).ok();
-                info!("Send! Control song"); 
+                info!("Send! Control song");
             }
             if let Ok(v) = song_control_rx.try_recv() {
                 match v {
                     VanControl::SetVolume(vol) => {
                         check_err!(MPV.set_property("volume", vol), err_tx_2)
                     }
-                    VanControl::NextSong => check_err!(MPV.playlist_next_weak(), err_tx_2),
-                    VanControl::PrevSong => check_err!(MPV.playlist_previous_weak(), err_tx_2),
+                    VanControl::NextSong => {
+                        getinfo_tx.send(PlayStatus::ContolSong).ok();
+                        check_err!(MPV.playlist_next_weak(), err_tx_2)
+                    }
+                    VanControl::PrevSong => {
+                        getinfo_tx.send(PlayStatus::ContolSong).ok();
+                        check_err!(MPV.playlist_previous_weak(), err_tx_2)
+                    }
                     VanControl::PauseControl => {
                         let is_pause = MPV.get_property::<bool>("pause").ok();
                         if is_pause == Some(false) {
@@ -152,6 +159,9 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
                     }
                 }
             }
+        });
+        scope.spawn(move |_| loop {
+            let ev = ev_ctx.wait_event(600.).unwrap_or(Err(Error::Null));
             match ev {
                 Ok(Event::PropertyChange {
                     name: "demuxer-cache-state",
@@ -168,7 +178,7 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
                             .map(|(x, y, z)| (x.as_str(), *y, *z))
                             .collect::<Vec<_>>();
 
-                        check_err!(MPV.playlist_load_files(&queue_ref), err_tx_2);
+                        check_err!(MPV.playlist_load_files(&queue_ref), err_tx_3);
                         continue;
                     }
                 }
