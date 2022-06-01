@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use std::sync::{mpsc::Sender, Arc};
+use std::{sync::{mpsc::Sender, Arc}, time::Duration};
 use time::{format_description, UtcOffset};
 
 use clap::Parser;
@@ -10,7 +10,7 @@ use cursive::{
     View,
 };
 use log::{error, info};
-use mpv::DEFAULT_VOL;
+use mpv::{get_file_name, DEFAULT_VOL};
 
 mod mpv;
 
@@ -46,7 +46,6 @@ fn main() {
     let mut current_artist_view = TextView::new("Unknown");
     let current_artist_status = Arc::new(current_artist_view.get_shared_content());
 
-
     std::thread::spawn(move || {
         let (getinfo_tx, getinfo_rx) = std::sync::mpsc::channel();
         let current_song_status_clone = current_song_status.clone();
@@ -61,18 +60,22 @@ fn main() {
             }
         });
         loop {
-            let mut s = String::from("-/-");
-            if let Ok(m) = getinfo_rx.try_recv() {
+            let mut time_str = String::from("-/-");
+            let r =  getinfo_rx.recv_timeout(Duration::from_millis(300));
+            if let Ok(m) = r {
                 info!("Recviver! {:?}", m);
+
                 current_song_status_clone.set_content(m.title);
                 current_artist_status.set_content(m.artist);
                 if let Ok(current_time) = get_time(m.current_time) {
-                    s = s.replace("-/", &format!("{}/", current_time));
+                    time_str = time_str.replace("-/", &format!("{}/", current_time));
                 }
                 if let Ok(duration) = get_time(m.duration) {
-                    s = s.replace("/-", &format!("/{}", duration));
+                    time_str = time_str.replace("/-", &format!("/{}", duration));
                 }
-                current_time_status.set_content(s);
+                current_time_status.set_content(time_str);
+            } else if let Ok(name) = get_file_name() {
+                current_song_status_clone.set_content(name);
             }
         }
     });

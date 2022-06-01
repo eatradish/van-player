@@ -13,7 +13,7 @@ use anyhow::{anyhow, Result};
 
 use crate::VanControl;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MediaInfo {
     pub title: String,
     pub artist: String,
@@ -75,15 +75,19 @@ fn seekable_ranges(demuxer_cache_state: &MpvNode) -> Option<Vec<(f64, f64)>> {
 
 fn get_current_song_index() -> Result<i64> {
     let current = MPV
-        .get_property::<i64>("playlist-pos")
+        .get_property("playlist-pos")
         .map_err(|e| anyhow!("{}", e))?;
 
     Ok(current)
 }
 
 fn get_total_content() -> Result<i64> {
-    MPV.get_property::<i64>("playlist-count")
+    MPV.get_property("playlist-count")
         .map_err(|e| anyhow!("{}", e))
+}
+
+pub fn get_file_name() -> Result<String> {
+    MPV.get_property("filename").map_err(|e| anyhow!("{}", e))
 }
 
 fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInfo>) -> Result<()> {
@@ -101,7 +105,10 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInf
 
     crossbeam::scope(|scope| {
         scope.spawn(move |_| {
-            check_err!(MPV.set_property("options/ytdl-raw-options", "yes-playlist="), err_tx);
+            check_err!(
+                MPV.set_property("options/ytdl-raw-options", "yes-playlist="),
+                err_tx
+            );
             check_err!(MPV.set_property("vo", "null"), err_tx);
             let queue = &*QUEUE.lock().unwrap();
             let queue = queue
@@ -142,8 +149,8 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<MediaInf
                 }) => {
                     let current_media = get_current_media_info();
                     if let Ok(m) = current_media {
+                        getinfo_tx.send(m.clone()).ok();
                         info!("Send! {:?}", m);
-                        getinfo_tx.send(m).ok();
                     }
                     info!("{:?}", seekable_ranges(node));
                 }
