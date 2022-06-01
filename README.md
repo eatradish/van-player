@@ -18,7 +18,8 @@ Use:
 $ ./target/release/van [URL1] [URL2]
 ```
 
-Press [=] to add volume
-Press [-] ro reduce volume
-Press [p] to pause/unpause song
-Press [l] to control playlist
+- Press [=] to add volume
+- Press [-] ro reduce volume
+- Press [p] to pause/unpause song
+- Press [l] to control playlist
+- Press [Left] or [Right] to Prev/Next song
