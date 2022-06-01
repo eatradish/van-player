@@ -4,6 +4,13 @@ An Tui Music Player
 ## Screenshot
 ![image](https://user-images.githubusercontent.com/19554922/171415550-636b5ca8-2374-4fe4-bcf7-03e7fbba470a.png)
 
+## Dep
+
+- ncurses
+- libmpv
+- Glib
+- Rust and Cargo
+
 ## Usage
 
 Build van-player:
