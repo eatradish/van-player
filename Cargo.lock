@@ -689,7 +689,7 @@ checksum = "3ed742d4ea2bd1176e236172c8429aaf54486e7ac098db29ffe6529e0ce50973"
 
 [[package]]
 name = "van-core"
-version = "0.2.1"
+version = "0.2.2-alpha.0"
 dependencies = [
  "anyhow",
  "crossbeam",
