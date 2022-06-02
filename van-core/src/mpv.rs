@@ -119,7 +119,6 @@ pub fn force_play(count: i64) -> Result<()> {
 
 fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStatus>) -> Result<()> {
     let mut ev_ctx = MPV.create_event_context();
-    let (exit_tx, exit_rx) = std::sync::mpsc::channel();
     ev_ctx
         .observe_property("volume", Format::Int64, 0)
         .map_err(|e| anyhow!("{}", e))?;
@@ -177,7 +176,8 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
                         }
                     }
                     VanControl::Exit => {
-                        exit_tx.send(true).unwrap();
+                        info!("destroy");
+                        check_err!(MPV.command("quit", &[]), err_tx_2);
                     }
                 }
             }
@@ -207,15 +207,10 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
         });
     })
     .map_err(|e| anyhow!("{:?}", e))?;
-
+    
     loop {
         if let Ok(e) = err_rx.try_recv() {
             return Err(anyhow!("{}", e));
-        }
-        if let Ok(exit) = exit_rx.try_recv() {
-            if exit {
-                return Ok(());
-            }
         }
     }
 }

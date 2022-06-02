@@ -15,7 +15,7 @@ use cursive::{
     },
     Cursive, View,
 };
-use log::error;
+use log::{error};
 use mpv::{force_play, get_file_name, get_playlist, DEFAULT_VOL};
 
 use mpv::VanControl;
