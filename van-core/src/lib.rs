@@ -29,7 +29,6 @@ struct CurrentStatus {
     current_time_status: Arc<TextContent>,
 }
 
-
 /// Init Cursive view
 /// ```rust
 /// use cursive::{Cursive, CursiveExt};
@@ -45,8 +44,12 @@ struct CurrentStatus {
 ///
 /// siv.run();
 /// ```
-pub fn init_siv(siv: &mut Cursive, args: Vec<String>, control_tx: Sender<VanControl>, control_rx: Receiver<VanControl>) -> Result<()> {
-
+pub fn init_siv(
+    siv: &mut Cursive,
+    args: Vec<String>,
+    control_tx: Sender<VanControl>,
+    control_rx: Receiver<VanControl>,
+) -> Result<()> {
     let (view, current_status) = get_view();
     let vol_status = current_status.vol.unwrap();
 
@@ -68,7 +71,6 @@ pub fn init_siv(siv: &mut Cursive, args: Vec<String>, control_tx: Sender<VanCont
 
     Ok(())
 }
-
 
 /// Destroy mpv
 pub fn destroy_mpv(control_tx: Sender<VanControl>) -> Result<()> {
