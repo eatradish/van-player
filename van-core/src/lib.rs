@@ -68,6 +68,14 @@ pub fn init_siv(siv: &mut Cursive, args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+
+/// Destroy mpv
+pub fn destroy_mpv(control_tx: Sender<VanControl>) -> Result<()> {
+    control_tx.send(VanControl::Exit)?;
+
+    Ok(())
+}
+
 fn set_cursive(vol_status: Arc<TextContent>, control_tx: Sender<VanControl>, siv: &mut Cursive) {
     let volume_status_clone = vol_status.clone();
     let control_tx_clone = control_tx.clone();

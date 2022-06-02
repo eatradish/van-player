@@ -16,6 +16,7 @@ pub enum VanControl {
     NextSong,
     PrevSong,
     PauseControl,
+    Exit,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -118,6 +119,7 @@ pub fn force_play(count: i64) -> Result<()> {
 
 fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStatus>) -> Result<()> {
     let mut ev_ctx = MPV.create_event_context();
+    let (exit_tx, exit_rx) = std::sync::mpsc::channel();
     ev_ctx
         .observe_property("volume", Format::Int64, 0)
         .map_err(|e| anyhow!("{}", e))?;
@@ -174,6 +176,9 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
                             check_err!(MPV.unpause(), err_tx_2);
                         }
                     }
+                    VanControl::Exit => {
+                        exit_tx.send(true).unwrap();
+                    }
                 }
             }
             if get_total_content().ok() == get_current_song_index().ok().map(|x| x + 1) {
@@ -203,11 +208,16 @@ fn play_inner(song_control_rx: Receiver<VanControl>, getinfo_tx: Sender<PlayStat
     })
     .map_err(|e| anyhow!("{:?}", e))?;
 
-    if let Ok(e) = err_rx.recv() {
-        return Err(anyhow!("{}", e));
+    loop {
+        if let Ok(e) = err_rx.try_recv() {
+            return Err(anyhow!("{}", e));
+        }
+        if let Ok(exit) = exit_rx.try_recv() {
+            if exit {
+                return Ok(());
+            }
+        }
     }
-
-    Ok(())
 }
 
 pub fn get_playlist() -> Result<Vec<PlayListItem>> {
