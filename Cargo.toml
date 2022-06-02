@@ -13,5 +13,5 @@ members = ["./van-core"]
 [dependencies]
 cursive = "0.18"
 clap = { version = "3.1", features = ["derive"] }
-van-core = { version = "0.1.6-alpha.0", path = "./van-core"}
+van-core = { version = "0.2.0-alpha.0", path = "./van-core"}
 
