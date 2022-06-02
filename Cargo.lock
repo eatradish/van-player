@@ -689,9 +689,9 @@ checksum = "3ed742d4ea2bd1176e236172c8429aaf54486e7ac098db29ffe6529e0ce50973"
 
 [[package]]
 name = "van-core"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "424ddce0164a5c274f053c55a3b3db415f6abf0a72edbf55b7dcc186669db242"
+checksum = "b2134302faf3ce68ced3fb25087089b7d6039193b0b34db8e7eb8c037579c3e0"
 dependencies = [
  "anyhow",
  "crossbeam",
@@ -727,7 +727,7 @@ version = "0.1.2-alpha.0"
 dependencies = [
  "clap",
  "cursive",
- "van-core 0.1.1",
+ "van-core 0.1.2",
 ]
 
 [[package]]
