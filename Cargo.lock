@@ -688,11 +688,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ed742d4ea2bd1176e236172c8429aaf54486e7ac098db29ffe6529e0ce50973"
 
 [[package]]
-name = "van-player"
+name = "van-core"
 version = "0.1.1-alpha.0"
 dependencies = [
  "anyhow",
- "clap",
  "crossbeam",
  "cursive",
  "lazy_static",
@@ -702,6 +701,15 @@ dependencies = [
  "serde",
  "serde_json",
  "time",
+]
+
+[[package]]
+name = "van-player"
+version = "0.1.1-alpha.0"
+dependencies = [
+ "clap",
+ "cursive",
+ "van-core",
 ]
 
 [[package]]

@@ -1,22 +1,16 @@
 [package]
-name = "van-player"
 description = "An TUI Music Player"
-license = "MIT"
-version = "0.1.1-alpha.0"
 edition = "2021"
+license = "MIT"
+name = "van-player"
 repository = "https://github.com/eatradish/van-player"
+version = "0.1.1-alpha.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[workspace]
+members = ["./van-core"]
 
 [dependencies]
-libmpv = "2.0"
 cursive = "0.18"
-anyhow = "1.0"
-crossbeam = "0.8"
-lazy_static = "1.4"
-libc = "0.2"
-log = "0.4"
-clap = {version = "3.1", features = ["derive"] }
-time = {version = "0.3", features = ["formatting", "macros", "parsing"]}
-serde = {version = "1.0", features = ["derive"]}
-serde_json = "1.0"
+clap = { version = "3.1", features = ["derive"] }
+van-core = {path = "./van-core"}

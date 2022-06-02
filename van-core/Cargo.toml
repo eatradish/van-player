@@ -1,0 +1,19 @@
+[package]
+description = "An TUI Music Player"
+edition = "2021"
+license = "MIT"
+name = "van-core"
+repository = "https://github.com/eatradish/van-player"
+version = "0.1.1-alpha.0"
+
+[dependencies]
+anyhow = "1.0"
+crossbeam = "0.8"
+cursive = "0.18"
+lazy_static = "1.4"
+libc = "0.2"
+libmpv = "2.0"
+log = "0.4"
+serde = {version = "1.0", features = ["derive"]}
+serde_json = "1.0"
+time = {version = "0.3", features = ["formatting", "macros", "parsing"]}

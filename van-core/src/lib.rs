@@ -7,7 +7,6 @@ use std::sync::{
 };
 use time::{format_description, UtcOffset};
 
-use clap::Parser;
 use cursive::{
     event::{Event, Key},
     view::SizeConstraint,
@@ -23,13 +22,6 @@ use mpv::VanControl;
 
 use mpv::PlayStatus;
 
-#[derive(Parser, Debug)]
-#[clap(about, version, author)]
-struct Args {
-    #[clap()]
-    args: Vec<String>,
-}
-
 struct CurrentStatus {
     vol: Option<Arc<TextContent>>,
     current_song_status: Arc<TextContent>,
@@ -41,20 +33,25 @@ struct CurrentStatus {
 /// ```rust
 /// use cursive::{Cursive, CursiveExt};
 ///
+///
 /// let mut siv = Cursive::default();
-/// 
-/// if let Err(e) = van_player::init_siv(&mut siv) {
+///
+/// if let Err(e) = van_player::init_siv(&mut siv, vec!["https://www.bilibili.com/video/BV1HB4y1175c"]) {
 ///     eprintln!("{}", e);
 ///     std::process::exit(1);
 /// }
-/// 
+///
 /// siv.run();
 /// ```
-pub fn init_siv(siv: &mut Cursive) -> Result<()> {
+pub fn init_siv(siv: &mut Cursive, args: Vec<String>) -> Result<()> {
     let (control_tx, control_rx) = std::sync::mpsc::channel();
 
     let (view, current_status) = get_view();
     let vol_status = current_status.vol.unwrap();
+
+    for i in args {
+        mpv::add(&i)?;
+    }
 
     start_mpv(
         CurrentStatus {
@@ -63,11 +60,6 @@ pub fn init_siv(siv: &mut Cursive) -> Result<()> {
         },
         control_rx,
     );
-
-    let args = Args::parse().args;
-    for i in args {
-        mpv::add(&i)?;
-    }
 
     set_cursive(vol_status, control_tx, siv);
 
