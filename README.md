@@ -8,7 +8,8 @@ An Tui Music Player
 
 - ncurses
 - libmpv
-- Glib
+- Glibc
+- C Compile
 - Rust and Cargo
 
 ## Usage
