@@ -90,9 +90,6 @@ fn set_cursive(vol_status: Arc<TextContent>, control_tx: Sender<VanControl>, siv
     let control_tx_clone_4 = control_tx.clone();
     let van_clone = van.clone();
     let van_clone_2 = van.clone();
-    let van_clone_3 = van.clone();
-
-
 
     siv.add_global_callback('=', move |_| {
         if let Err(e) = add_volume(control_tx.clone(), volume_status_clone.clone(), van_clone.clone()) {
@@ -114,7 +111,7 @@ fn set_cursive(vol_status: Arc<TextContent>, control_tx: Sender<VanControl>, siv
         control_tx_clone_4.send(VanControl::PauseControl).unwrap();
     });
     siv.add_global_callback('l', move |s| {
-        playlist_view(s, van_clone_3.clone());
+        playlist_view(s, van.clone());
     });
     siv.add_global_callback('~', cursive::Cursive::toggle_debug_console);
     siv.set_autorefresh(true);
