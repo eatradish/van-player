@@ -4,7 +4,7 @@ edition = "2021"
 license = "MIT"
 name = "van-core"
 repository = "https://github.com/eatradish/van-player"
-version = "0.1.5"
+version = "0.1.6-alpha.0"
 
 [dependencies]
 anyhow = "1.0"
