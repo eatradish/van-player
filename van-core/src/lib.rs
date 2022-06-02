@@ -36,7 +36,7 @@ struct CurrentStatus {
 ///
 /// let mut siv = Cursive::default();
 ///
-/// if let Err(e) = van_core::init_siv(&mut siv, vec!["https://www.bilibili.com/video/BV1HB4y1175c"]) {
+/// if let Err(e) = van_core::init_siv(&mut siv, vec!["https://www.bilibili.com/video/BV1HB4y1175c".to_string()]) {
 ///     eprintln!("{}", e);
 ///     std::process::exit(1);
 /// }
