@@ -3,7 +3,7 @@ mod mpv;
 use anyhow::{anyhow, Result};
 use std::sync::{
     mpsc::{Receiver, Sender},
-    Arc,
+    Arc, Mutex,
 };
 use time::{format_description, UtcOffset};
 
@@ -16,8 +16,7 @@ use cursive::{
     Cursive, View,
 };
 use log::{error};
-use mpv::{force_play, get_file_name, get_playlist, DEFAULT_VOL};
-
+use mpv::{Van, DEFAULT_VOL};
 use mpv::VanControl;
 
 use mpv::PlayStatus;
@@ -52,9 +51,13 @@ pub fn init_siv(
 ) -> Result<()> {
     let (view, current_status) = get_view();
     let vol_status = current_status.vol.unwrap();
+    let van = Mutex::new(Arc::new(Van::new()?));
+    let van = van.lock().map_err(|e| anyhow!("{}", e))?;
+    let van_clone = van.clone();
+    let van_clone_2 = van.clone();
 
     for i in args {
-        mpv::add(&i)?;
+        van.add(&i)?;
     }
 
     start_mpv(
@@ -63,9 +66,10 @@ pub fn init_siv(
             ..current_status
         },
         control_rx,
+        van_clone
     );
 
-    set_cursive(vol_status, control_tx, siv);
+    set_cursive(vol_status, control_tx, siv, van_clone_2);
 
     siv.add_layer(view);
 
@@ -79,20 +83,25 @@ pub fn destroy_mpv(control_tx: Sender<VanControl>) -> Result<()> {
     Ok(())
 }
 
-fn set_cursive(vol_status: Arc<TextContent>, control_tx: Sender<VanControl>, siv: &mut Cursive) {
+fn set_cursive(vol_status: Arc<TextContent>, control_tx: Sender<VanControl>, siv: &mut Cursive, van: Arc<Van>) {
     let volume_status_clone = vol_status.clone();
     let control_tx_clone = control_tx.clone();
     let control_tx_clone_2 = control_tx.clone();
     let control_tx_clone_3 = control_tx.clone();
     let control_tx_clone_4 = control_tx.clone();
+    let van_clone = van.clone();
+    let van_clone_2 = van.clone();
+    let van_clone_3 = van.clone();
+
+
 
     siv.add_global_callback('=', move |_| {
-        if let Err(e) = add_volume(control_tx.clone(), volume_status_clone.clone()) {
+        if let Err(e) = add_volume(control_tx.clone(), volume_status_clone.clone(), van_clone.clone()) {
             error!("{}", e);
         }
     });
     siv.add_global_callback('-', move |_| {
-        if let Err(e) = reduce_volume(control_tx_clone_2.clone(), vol_status.clone()) {
+        if let Err(e) = reduce_volume(control_tx_clone_2.clone(), vol_status.clone(), van_clone_2.clone()) {
             error!("{}", e);
         }
     });
@@ -106,7 +115,7 @@ fn set_cursive(vol_status: Arc<TextContent>, control_tx: Sender<VanControl>, siv
         control_tx_clone_4.send(VanControl::PauseControl).unwrap();
     });
     siv.add_global_callback('l', move |s| {
-        playlist_view(s);
+        playlist_view(s, van_clone_3.clone());
     });
     siv.add_global_callback('~', cursive::Cursive::toggle_debug_console);
     siv.set_autorefresh(true);
@@ -149,8 +158,8 @@ fn get_view() -> (Dialog, CurrentStatus) {
     )
 }
 
-fn playlist_view(siv: &mut Cursive) {
-    let playlist = get_playlist();
+fn playlist_view(siv: &mut Cursive, van: Arc<Van>) {
+    let playlist = van.get_playlist();
     let mut files = vec![];
     if let Ok(playlist) = playlist {
         for i in playlist {
@@ -165,7 +174,7 @@ fn playlist_view(siv: &mut Cursive) {
             .on_submit(move |s, c: &String| {
                 let index = files.clone().iter().position(|x| x == c);
                 if let Some(index) = index {
-                    force_play(index.try_into().unwrap()).ok();
+                    van.force_play(index.try_into().unwrap()).ok();
                 }
                 s.pop_layer();
             }),
@@ -182,7 +191,8 @@ fn playlist_view(siv: &mut Cursive) {
     siv.add_layer(view);
 }
 
-fn start_mpv(current_status: CurrentStatus, control_rx: Receiver<VanControl>) {
+fn start_mpv(current_status: CurrentStatus, control_rx: Receiver<VanControl>, van: Arc<Van>) {
+    let van_clone = van.clone();
     std::thread::spawn(move || {
         let (getinfo_tx, getinfo_rx) = std::sync::mpsc::channel();
         let current_song_status_clone = current_status.current_song_status.clone();
@@ -191,7 +201,7 @@ fn start_mpv(current_status: CurrentStatus, control_rx: Receiver<VanControl>) {
             // Call 'setlocale(LC_NUMERIC, "C");' in your code.
             let buf = std::ffi::CString::new("C").expect("Unknown Error!");
             unsafe { libc::setlocale(libc::LC_NUMERIC, buf.as_ptr()) };
-            if let Err(e) = mpv::play(control_rx, getinfo_tx) {
+            if let Err(e) = van.play(control_rx, getinfo_tx) {
                 eprintln!("{}", e);
                 std::process::exit(1);
             }
@@ -214,7 +224,7 @@ fn start_mpv(current_status: CurrentStatus, control_rx: Receiver<VanControl>) {
                         current_status.current_time_status.set_content(time_str);
                     }
                     PlayStatus::Loading => {
-                        if let Ok(name) = get_file_name() {
+                        if let Ok(name) = van_clone.get_file_name() {
                             current_status.current_song_status.clone().set_content(name);
                             current_status
                                 .current_artist_status
@@ -232,8 +242,8 @@ fn start_mpv(current_status: CurrentStatus, control_rx: Receiver<VanControl>) {
     });
 }
 
-fn add_volume(control_tx: Sender<VanControl>, vol_status: Arc<TextContent>) -> Result<()> {
-    let mut current_vol = mpv::get_volume()?;
+fn add_volume(control_tx: Sender<VanControl>, vol_status: Arc<TextContent>, van: Arc<Van>) -> Result<()> {
+    let mut current_vol = van.get_volume()?;
     if current_vol < 100.0 {
         current_vol += 5.0;
         control_tx.send(VanControl::SetVolume(current_vol))?;
@@ -243,8 +253,8 @@ fn add_volume(control_tx: Sender<VanControl>, vol_status: Arc<TextContent>) -> R
     Ok(())
 }
 
-fn reduce_volume(control_tx: Sender<VanControl>, vol_status: Arc<TextContent>) -> Result<()> {
-    let mut current_vol = mpv::get_volume()?;
+fn reduce_volume(control_tx: Sender<VanControl>, vol_status: Arc<TextContent>, van: Arc<Van>) -> Result<()> {
+    let mut current_vol = van.get_volume()?;
     if current_vol > 0.0 {
         current_vol -= 5.0;
         control_tx.send(VanControl::SetVolume(current_vol))?;
