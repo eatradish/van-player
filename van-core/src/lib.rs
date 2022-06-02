@@ -29,6 +29,7 @@ struct CurrentStatus {
     current_time_status: Arc<TextContent>,
 }
 
+
 /// Init Cursive view
 /// ```rust
 /// use cursive::{Cursive, CursiveExt};
@@ -36,15 +37,15 @@ struct CurrentStatus {
 ///
 /// let mut siv = Cursive::default();
 ///
-/// if let Err(e) = van_core::init_siv(&mut siv, vec!["https://www.bilibili.com/video/BV1HB4y1175c".to_string()]) {
+/// let (control_tx, control_rx) = std::sync::mpsc::channel();
+/// if let Err(e) = van_core::init_siv(&mut siv, vec!["https://www.bilibili.com/video/BV1HB4y1175c".to_string()], control_tx, control_rx) {
 ///     eprintln!("{}", e);
 ///     std::process::exit(1);
 /// }
 ///
 /// siv.run();
 /// ```
-pub fn init_siv(siv: &mut Cursive, args: Vec<String>) -> Result<()> {
-    let (control_tx, control_rx) = std::sync::mpsc::channel();
+pub fn init_siv(siv: &mut Cursive, args: Vec<String>, control_tx: Sender<VanControl>, control_rx: Receiver<VanControl>) -> Result<()> {
 
     let (view, current_status) = get_view();
     let vol_status = current_status.vol.unwrap();
