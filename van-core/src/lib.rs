@@ -3,7 +3,7 @@ mod mpv;
 use anyhow::{anyhow, Result};
 use std::sync::{
     mpsc::{Receiver, Sender},
-    Arc, Mutex,
+    Arc
 };
 use time::{format_description, UtcOffset};
 
@@ -51,8 +51,7 @@ pub fn init_siv(
 ) -> Result<()> {
     let (view, current_status) = get_view();
     let vol_status = current_status.vol.unwrap();
-    let van = Mutex::new(Arc::new(Van::new()?));
-    let van = van.lock().map_err(|e| anyhow!("{}", e))?;
+    let van = Arc::new(Van::new()?);
     let van_clone = van.clone();
     let van_clone_2 = van.clone();
 
